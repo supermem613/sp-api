@@ -54,7 +54,7 @@ describe('sp-api live SharePoint integration', () => {
   it('runs doctor without helper script checks', () => {
     const doctor = runSpApi(['doctor']);
     assert.strictEqual(doctor.ok, true);
-    assert.ok(doctor.data.checks.some(check => check.name === 'rest-client'));
+    assert.ok(doctor.data.checks.some(check => check.name === 'auth-file'));
     assert.ok(!doctor.data.checks.some(check => check.name.includes('.js')));
   });
 

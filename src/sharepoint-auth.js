@@ -76,13 +76,16 @@ function buildCookieString(cookies, tenantHost) {
 }
 
 async function authenticate(site, options = {}) {
-  const { forceLogin = false, playwright = requirePlaywright(), authFile = AUTH_FILE, profileDir = PROFILE_DIR } = options;
+  const { forceLogin = false, verbose = false, playwright = requirePlaywright(), authFile = AUTH_FILE, profileDir = PROFILE_DIR } = options;
   const { tenantHost, sitePath } = parseSiteInput(site);
   ensureDir(profileDir);
 
   const tenantUrl = `https://${tenantHost}`;
   const siteUrl = sitePath ? `${tenantUrl}${sitePath}` : tenantUrl;
   let headless = !forceLogin;
+  const log = (msg) => { if (verbose) process.stderr.write(`[auth] ${msg}\n`); };
+
+  log(`launching Edge (${headless ? 'headless probe' : 'visible'}, profile=${profileDir})`);
   let context = await playwright.chromium.launchPersistentContext(profileDir, {
     channel: 'msedge',
     headless,
@@ -115,14 +118,15 @@ async function authenticate(site, options = {}) {
   }
   installTokenInterceptor(page);
 
+  log(`loading ${siteUrl}`);
   await page.goto(siteUrl, { waitUntil: 'domcontentloaded' });
   if (headless && isLoginUrl(page.url())) {
+    log('login redirect detected — relaunching visible Edge for sign-in');
     try {
       await page.waitForURL(url => !isLoginUrl(url.toString()), { timeout: HEADLESS_PROBE_MS });
     } catch {
       await context.close();
-      process.stderr.write('Opening Edge for login.\n');
-      process.stderr.write('Complete the login in the browser window.\n');
+      process.stderr.write('Opening Edge for login. Complete sign-in in the browser window.\n');
       context = await playwright.chromium.launchPersistentContext(profileDir, {
         channel: 'msedge',
         headless: false,
@@ -137,24 +141,28 @@ async function authenticate(site, options = {}) {
   }
 
   if (!headless && isLoginUrl(page.url())) {
+    log(`waiting up to ${LOGIN_TIMEOUT_MS / 1000}s for sign-in to complete`);
     try {
       await page.waitForURL(url => !isLoginUrl(url.toString()), { timeout: LOGIN_TIMEOUT_MS });
-      process.stderr.write('Login successful. Profile saved.\n');
+      log('sign-in complete');
     } catch {
       await context.close();
       throw new Error('Login timed out or browser was closed.');
     }
   }
 
+  log('settling site page');
   await page.waitForLoadState('networkidle').catch(() => {});
   let spToken = capturedTokens.sp;
   if (!spToken) {
+    log('no token captured on first pass — retrying networkidle navigation');
     try {
       await page.goto(siteUrl, { waitUntil: 'networkidle', timeout: 30000 });
       spToken = capturedTokens.sp;
     } catch {}
   }
 
+  log('collecting tenant cookies');
   const allCookies = await context.cookies();
   const cookieStr = buildCookieString(allCookies, tenantHost);
   await context.close();
@@ -170,6 +178,7 @@ async function authenticate(site, options = {}) {
   };
   ensureDir(path.dirname(authFile));
   fs.writeFileSync(authFile, JSON.stringify(authData, null, 2) + '\n');
+  log(`wrote ${authFile} (token=${!!spToken})`);
   return { cookieStr, siteUrl, spToken };
 }
 

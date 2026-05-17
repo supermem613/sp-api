@@ -22,9 +22,10 @@ const capabilities = {
         params: [
           { name: 'site', type: 'string', required: true, doc: 'SharePoint site URL or host/path, for example contoso.sharepoint.com/sites/team' },
           { name: 'force', type: 'boolean', required: false, doc: 'Force visible login by passing --force' },
+          { name: 'verbose', type: 'boolean', required: false, doc: 'Print per-phase progress to stderr' },
         ],
         output: { envelope: envelopeSchema, data: 'Authentication status and target site' },
-        examples: ['sp-api auth login --site contoso.sharepoint.com/sites/team'],
+        examples: ['sp-api auth login --site contoso.sharepoint.com/sites/team', 'sp-api auth login --site contoso.sharepoint.com/sites/team --verbose'],
       },
       logout: {
         id: 'auth.logout',
@@ -514,7 +515,7 @@ const capabilities = {
   doctor: {
     id: 'doctor',
     summary: 'Run local health checks for the agentic CLI',
-    description: 'Check scripts, auth file presence, and runtime compatibility.',
+    description: 'Verify Node.js compatibility and the cached auth file.',
     verbs: {
       run: {
         id: 'doctor.run',

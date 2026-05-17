@@ -138,15 +138,13 @@ function buildSharePointRequest(spec, values) {
 }
 
 function doctor() {
-  const checks = [
-    { name: 'node', ok: true, detail: process.version, hint: 'Install Node.js 24 or later' },
-    { name: 'cli-entrypoint', ok: fs.existsSync(path.join(repoRoot, 'bin', 'sp-api.js')), detail: 'sp-api executable', hint: 'Restore bin/sp-api.js' },
-    { name: 'capability-registry', ok: fs.existsSync(path.join(repoRoot, 'src', 'registry.js')), detail: 'Generated schema and help source', hint: 'Restore src/registry.js' },
-    { name: 'rest-client', ok: fs.existsSync(path.join(repoRoot, 'src', 'sharepoint-rest.js')), detail: 'SharePoint REST client', hint: 'Restore src/sharepoint-rest.js' },
-    { name: 'auth-module', ok: fs.existsSync(path.join(repoRoot, 'src', 'sharepoint-auth.js')), detail: 'SharePoint auth module', hint: 'Restore src/sharepoint-auth.js' },
-    { name: 'auth-file', ok: fs.existsSync(AUTH_FILE), detail: AUTH_FILE, hint: 'Run sp-api auth login --site <site>' },
+  const nodeMajor = Number.parseInt(process.versions.node.split('.')[0], 10);
+  const raw = [
+    { name: 'node', ok: nodeMajor >= 24, detail: process.version, hint: 'Install Node.js 24 or later' },
+    { name: 'auth-file', ok: fs.existsSync(AUTH_FILE), detail: AUTH_FILE, hint: 'Run "sp-api auth login --site <site>" to create it' },
   ];
-  return { ok: checks.every(check => check.ok), checks };
+  const checks = raw.map(c => (c.ok ? { name: c.name, ok: true, detail: c.detail } : c));
+  return { checks };
 }
 
 function gitPullMadeNoChanges(output) {
@@ -223,7 +221,7 @@ function selfUpdate(deps = {}) {
 async function runAuth(verbName, flags) {
   if (verbName === 'status') return { ok: true, data: authStatus() };
   if (verbName === 'login') {
-    const data = await authenticate(flags.site, { forceLogin: !!flags.force });
+    const data = await authenticate(flags.site, { forceLogin: !!flags.force, verbose: !!flags.verbose });
     return { ok: true, data: { site: data.siteUrl, authenticated: true, hasToken: !!data.spToken } };
   }
   const data = logout();
@@ -261,8 +259,23 @@ async function main(args, io) {
       return;
     }
     const data = doctor();
-    writeJson(stdout, envelope(data.ok, 'doctor', data, data.ok ? null : { code: 'DOCTOR_FAILED', message: 'One or more checks failed' }));
-    exit(data.ok ? 0 : 1);
+    const failed = data.checks.filter(check => !check.ok).map(check => check.name);
+    const ok = failed.length === 0;
+    const result = {
+      ok,
+      command: 'doctor',
+      data,
+      error: ok
+        ? null
+        : {
+            code: 'DOCTOR_FAILED',
+            message: `Doctor check failed: ${failed.join(', ')}. Run "sp-api auth login --site <site>" if auth-file is the only failure.`,
+            failed,
+          },
+      meta: { schemaVersion: '0.1.0' },
+    };
+    writeJson(stdout, result);
+    exit(ok ? 0 : 1);
     return;
   }
   if (capabilityName === 'update') {

@@ -218,6 +218,39 @@ describe('JSON envelope behavior', () => {
     assert.ok(Object.hasOwn(json.data, 'exists'));
     assert.ok(json.data.authFile.endsWith(join('.sp-api', 'auth.json')));
   });
+
+  it('keeps the doctor checks payload on both success and failure', () => {
+    const r = runCli(['doctor']);
+    const json = parseJson(r.stdout);
+    assert.strictEqual(json.command, 'doctor');
+    assert.ok(Array.isArray(json.data.checks), 'doctor.data.checks must always be present');
+    assert.ok(json.data.checks.length >= 2, 'doctor should report at least node + auth-file checks');
+    const knownNames = new Set(['node', 'auth-file']);
+    for (const check of json.data.checks) {
+      assert.ok(knownNames.has(check.name), `unexpected check name: ${check.name}`);
+      assert.strictEqual(typeof check.ok, 'boolean');
+      if (check.ok) {
+        assert.strictEqual(check.hint, undefined, `passing checks must not carry a hint (${check.name})`);
+      } else {
+        assert.strictEqual(typeof check.hint, 'string');
+      }
+    }
+    if (json.ok) {
+      assert.strictEqual(r.status, 0);
+      assert.strictEqual(json.error, null);
+    } else {
+      assert.strictEqual(r.status, 1);
+      assert.strictEqual(json.error.code, 'DOCTOR_FAILED');
+      assert.ok(Array.isArray(json.error.failed), 'error.failed must list the failed check names');
+      assert.ok(json.error.failed.length >= 1);
+      for (const name of json.error.failed) {
+        const check = json.data.checks.find(c => c.name === name);
+        assert.ok(check, `failed check ${name} must appear in data.checks`);
+        assert.strictEqual(check.ok, false);
+      }
+      assert.match(json.error.message, /Doctor check failed/);
+    }
+  });
 });
 
 describe('SharePoint request construction', () => {
