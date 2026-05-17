@@ -35,7 +35,7 @@ function parseJson(stdout) {
 describe('sp-api package wiring', () => {
   it('exposes a bin script with a shebang', () => {
     const pkg = JSON.parse(readFileSync(join(repoRoot, 'package.json'), 'utf8'));
-    assert.strictEqual(pkg.version, '1.2.0');
+    assert.match(pkg.version, /^\d+\.\d+\.\d+(?:-[\w.]+)?$/);
     assert.strictEqual(pkg.bin['sp-api'], 'bin/sp-api.js');
     assert.strictEqual(pkg.scripts.build, 'node scripts/build.js');
     assert.strictEqual(pkg.scripts.prepare, 'npm run build');

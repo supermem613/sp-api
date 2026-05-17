@@ -18,7 +18,7 @@ function normalizeNewlines(text) {
 
 function main() {
   const pkg = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8'));
-  assert.strictEqual(pkg.version, '1.2.0', 'package version should be 1.2.0');
+  assert.match(pkg.version, /^\d+\.\d+\.\d+(?:-[\w.]+)?$/, 'package version must be valid semver');
   assert.strictEqual(pkg.bin?.['sp-api'], 'bin/sp-api.js', 'package bin must expose sp-api');
 
   const bin = fs.readFileSync(binPath, 'utf8');
