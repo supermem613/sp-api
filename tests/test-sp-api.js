@@ -14,7 +14,7 @@ const {
   renderVerbHelp,
   renderSkillRouter,
 } = require('../src/renderers');
-const { gitPullMadeNoChanges, selfUpdate } = require('../src/sp-api-core');
+const { buildSharePointRequest, gitPullMadeNoChanges, selfUpdate } = require('../src/sp-api-core');
 
 const repoRoot = join(__dirname, '..');
 const cliPath = join(repoRoot, 'bin', 'sp-api.js');
@@ -35,7 +35,7 @@ function parseJson(stdout) {
 describe('sp-api package wiring', () => {
   it('exposes a bin script with a shebang', () => {
     const pkg = JSON.parse(readFileSync(join(repoRoot, 'package.json'), 'utf8'));
-    assert.strictEqual(pkg.version, '1.1.0');
+    assert.strictEqual(pkg.version, '1.2.0');
     assert.strictEqual(pkg.bin['sp-api'], 'bin/sp-api.js');
     assert.strictEqual(pkg.scripts.build, 'node scripts/build.js');
     assert.strictEqual(pkg.scripts.prepare, 'npm run build');
@@ -77,6 +77,30 @@ describe('registry invariants', () => {
     assert.ok(!capabilities.request);
   });
 
+  it('exposes compatible semantic capabilities brought over from spfs', () => {
+    assert.ok(capabilities.search.verbs.query);
+    assert.ok(capabilities.sites.verbs.get);
+    assert.ok(capabilities.sites.verbs.discovery);
+    assert.ok(capabilities.pages.verbs.list);
+    assert.ok(capabilities.pages.verbs.get);
+    assert.ok(capabilities.pages.verbs.checkout);
+    assert.ok(capabilities.pages.verbs['save-fields']);
+    assert.ok(capabilities.pages.verbs.publish);
+    assert.ok(capabilities.pages.verbs['discard-checkout']);
+    assert.ok(capabilities.permissions.verbs.get);
+    assert.ok(capabilities.lists.verbs.fields);
+    assert.ok(capabilities.files.verbs.folder);
+    assert.ok(capabilities.files.verbs.recycle);
+  });
+
+  it('keeps shipped verbs out of the planned capability lists', () => {
+    const schema = emitSchema();
+    assert.deepStrictEqual(schema.plannedCapabilities.search, ['people']);
+    assert.deepStrictEqual(schema.plannedCapabilities.pages, ['create', 'delete']);
+    assert.deepStrictEqual(schema.plannedCapabilities.permissions, ['grant', 'revoke', 'break-inheritance', 'reset-inheritance']);
+    assert.deepStrictEqual(schema.plannedCapabilities.sites, ['subsites', 'navigation']);
+  });
+
   it('keeps Playwright isolated to the auth module', () => {
     const nonAuthFiles = [
       join(repoRoot, 'bin', 'sp-api.js'),
@@ -111,6 +135,15 @@ describe('schema output', () => {
     assert.strictEqual(verb.data.method, 'POST');
   });
 
+  it('emits focused schemas for newly implemented capability groups', () => {
+    const search = parseJson(runCli(['schema', 'search', 'query']).stdout);
+    assert.strictEqual(search.data.id, 'search.query');
+    const page = parseJson(runCli(['schema', 'pages', 'save-fields']).stdout);
+    assert.strictEqual(page.data.params.find(param => param.name === 'body').type, 'json');
+    const permissions = parseJson(runCli(['schema', 'permissions', 'get']).stdout);
+    assert.strictEqual(permissions.data.path, '_api/web/roleassignments');
+  });
+
   it('fails unknown schema targets with a JSON envelope', () => {
     const r = runCli(['schema', 'missing']);
     assert.strictEqual(r.status, 2);
@@ -133,6 +166,18 @@ describe('generated help', () => {
     assert.strictEqual(r.status, 0);
     assert.strictEqual(r.stdout, renderCapabilityHelp(capabilities.lists));
     assert.match(r.stdout, /add-item/);
+  });
+
+  it('generates help for new capability groups from the registry', () => {
+    const pages = runCli(['pages', '--help']);
+    assert.strictEqual(pages.status, 0);
+    assert.strictEqual(pages.stdout, renderCapabilityHelp(capabilities.pages));
+    assert.match(pages.stdout, /save-fields/);
+
+    const search = runCli(['search', 'query', '--help']);
+    assert.strictEqual(search.status, 0);
+    assert.strictEqual(search.stdout, renderVerbHelp(capabilities.search, 'query', capabilities.search.verbs.query));
+    assert.match(search.stdout, /--row-limit/);
   });
 
   it('generates verb help from the registry', () => {
@@ -172,6 +217,49 @@ describe('JSON envelope behavior', () => {
     assert.strictEqual(json.ok, true);
     assert.ok(Object.hasOwn(json.data, 'exists'));
     assert.ok(json.data.authFile.endsWith(join('.sp-api', 'auth.json')));
+  });
+});
+
+describe('SharePoint request construction', () => {
+  it('builds encoded search query URLs without exposing raw HTTP args', () => {
+    const request = buildSharePointRequest(capabilities.search.verbs.query, {
+      query: "Title:'Roadmap'",
+      'row-limit': 10,
+      'select-properties': 'Title,Path',
+    });
+    assert.strictEqual(
+      request.endpoint,
+      "_api/search/query?querytext='Title%3A''Roadmap'''&rowlimit=10&selectproperties=Title%2CPath",
+    );
+    assert.strictEqual(request.body, '');
+  });
+
+  it('builds page field update bodies from explicit JSON without OData string escaping', () => {
+    const request = buildSharePointRequest(capabilities.pages.verbs['save-fields'], {
+      'item-id': 42,
+      body: { Title: "Team's page" },
+    });
+    assert.strictEqual(request.endpoint, "_api/web/lists/getbytitle('Site Pages')/items(42)");
+    assert.strictEqual(request.body, '{"Title":"Team\'s page"}');
+  });
+
+  it('builds folder, recycle, permissions, and site discovery endpoints', () => {
+    assert.strictEqual(
+      buildSharePointRequest(capabilities.files.verbs.folder, { folder: '/sites/team/Shared Documents' }).endpoint,
+      "_api/web/getfolderbyserverrelativeurl('/sites/team/Shared Documents')?$expand=Folders%2CFiles",
+    );
+    assert.strictEqual(
+      buildSharePointRequest(capabilities.files.verbs.recycle, { path: '/sites/team/Shared Documents/old.txt' }).endpoint,
+      "_api/web/getfilebyserverrelativeurl('/sites/team/Shared Documents/old.txt')/recycle",
+    );
+    assert.strictEqual(
+      buildSharePointRequest(capabilities.permissions.verbs.get, {}).endpoint,
+      '_api/web/roleassignments?$expand=Member%2CRoleDefinitionBindings',
+    );
+    assert.strictEqual(
+      buildSharePointRequest(capabilities.sites.verbs.discovery, {}).endpoint,
+      '_api/web/lists?$filter=Hidden eq false&$select=Id%2CTitle%2CBaseTemplate%2CBaseType%2CItemCount%2CRootFolder%2FServerRelativeUrl&$expand=RootFolder',
+    );
   });
 });
 

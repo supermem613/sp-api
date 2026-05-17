@@ -47,8 +47,12 @@ Commands are SharePoint capability groups with bounded verbs:
 
 ```text
 sp-api auth login|logout|status
-sp-api lists list|get|create|delete|items|add-item|update-item|delete-item
-sp-api files list|get|download|upload|delete|move|copy
+sp-api lists list|get|fields|create|delete|items|add-item|update-item|delete-item
+sp-api files list|get|folder|download|upload|delete|recycle|move|copy
+sp-api search query
+sp-api sites get|discovery
+sp-api pages list|get|checkout|save-fields|publish|discard-checkout
+sp-api permissions get
 sp-api schema [capability] [verb]
 sp-api doctor
 sp-api update

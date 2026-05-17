@@ -26,6 +26,10 @@ This bundled skill is a thin router for the `sp-api` CLI. Use the CLI for ShareP
 | `auth` | Manage SharePoint browser-session authentication | `sp-api auth --help` |
 | `lists` | Work with SharePoint lists and list items | `sp-api lists --help` |
 | `files` | Work with SharePoint files and folders | `sp-api files --help` |
+| `search` | Search SharePoint content | `sp-api search --help` |
+| `sites` | Discover SharePoint site metadata | `sp-api sites --help` |
+| `pages` | Work with SharePoint site pages | `sp-api pages --help` |
+| `permissions` | Inspect SharePoint permissions | `sp-api permissions --help` |
 | `schema` | Inspect the generated SharePoint capability schema | `sp-api schema --help` |
 | `doctor` | Run local health checks for the agentic CLI | `sp-api doctor --help` |
 | `update` | Self-update this sp-api checkout | `sp-api update --help` |

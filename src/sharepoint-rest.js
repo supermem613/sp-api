@@ -58,7 +58,7 @@ async function executeSharePointRequest(spec, endpoint, body, deps = {}) {
   const url = `${auth.SP_SITE}${normalizeEndpoint(endpoint)}`;
   const headers = {
     ...authHeaders(auth),
-    Accept: 'application/json;odata=nometadata',
+    Accept: spec.accept || 'application/json;odata=nometadata',
   };
   const method = spec.method || 'GET';
   const fetchOptions = { method, headers };
@@ -68,7 +68,7 @@ async function executeSharePointRequest(spec, endpoint, body, deps = {}) {
     fetchOptions.method = 'POST';
     fetchOptions.headers = {
       ...headers,
-      'Content-Type': 'application/json;odata=verbose',
+      'Content-Type': spec.contentType || 'application/json;odata=verbose',
       'X-RequestDigest': digest,
     };
     if (method !== 'POST') {

@@ -18,12 +18,84 @@ This repo is first and foremost the `sp-api` CLI. It includes a bundled skill on
 - Help generated from the same capability registry as schema
 - No raw HTTP passthrough
 
+## Questions and Tasks It Can Handle
+
+### Auth and Setup
+
+- *"Log in to this SharePoint site so future commands can use it"*
+- *"Am I authenticated, and which auth file is being used?"*
+- *"Clear the saved SharePoint browser profile and auth state"*
+- *"Check whether my local `sp-api` install is healthy"*
+- *"Update this git-clone install of `sp-api`"*
+
+### Site Discovery
+
+- *"What site am I connected to? Show the title, URL, description, and template"*
+- *"Show me the visible lists and libraries on this site with item counts and root folder paths"*
+- *"Which lists and document libraries should I inspect before making changes?"*
+
+### Lists and List Items
+
+- *"Show me all visible lists on this site with their item counts"*
+- *"Get metadata for the Tasks list"*
+- *"Show me the field schema for the Projects list, including internal names, types, required flags, read-only flags, and choices"*
+- *"Get the first 25 items from the Tasks list with only Title, Id, and Status"*
+- *"Create a new list called Project Tracker"*
+- *"Create a new item in the Issues list with Title 'Server outage' and Priority 'High'"*
+- *"Update item 42 in the Tasks list and set Status to Completed"*
+- *"Delete item 42 from the Tasks list"*
+- *"Delete the old TestData list"*
+
+### Files and Folders
+
+- *"List files in the Shared Documents library"*
+- *"Show folders and files under `/sites/team/Shared Documents`"*
+- *"Get metadata for `/sites/team/Shared Documents/report.docx`"*
+- *"Download the contents of `/sites/team/Shared Documents/config.json`"*
+- *"Upload a small text file called notes.txt to Shared Documents"*
+- *"Recycle old.txt without permanently deleting it"*
+- *"Delete old.txt permanently"*
+- *"Move draft.docx to the Archive folder"*
+- *"Copy budget.xlsx to a backup location"*
+
+### Search
+
+- *"Search this SharePoint site for documents containing 'quarterly review'"*
+- *"Find the top 10 results for Project Apollo and return Title and Path"*
+- *"Search with explicit managed properties so an agent can summarize the matches"*
+
+### Pages
+
+- *"List all modern Site Pages with titles and paths"*
+- *"Read the canvas content and metadata for Home.aspx"*
+- *"Check out the Home page before editing it"*
+- *"Update the title or description fields for a Site Pages item"*
+- *"Publish Home.aspx with a publish comment"*
+- *"Discard the checkout for Home.aspx"*
+
+### Permissions
+
+- *"Show me the role assignments for this site"*
+- *"Who has access to this site and what roles do they have?"*
+- *"Inspect web-level permissions before planning a permission change"*
+
+### Schema, Help, and Agent Routing
+
+- *"What SharePoint capabilities does `sp-api` expose right now?"*
+- *"Show the machine-readable schema for `pages publish`"*
+- *"Show generated help for `search query`"*
+- *"Tell me whether a capability is implemented or still planned without falling back to raw HTTP"*
+
 ## Current Command Surface
 
 ```text
 sp-api auth   login | logout | status
-sp-api lists  list | get | create | delete | items | add-item | update-item | delete-item
-sp-api files  list | get | download | upload | delete | move | copy
+sp-api lists  list | get | fields | create | delete | items | add-item | update-item | delete-item
+sp-api files  list | get | folder | download | upload | delete | recycle | move | copy
+sp-api search query
+sp-api sites  get | discovery
+sp-api pages  list | get | checkout | save-fields | publish | discard-checkout
+sp-api permissions get
 sp-api schema [capability] [verb]
 sp-api doctor
 sp-api update

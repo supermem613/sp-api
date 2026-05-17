@@ -126,9 +126,15 @@ function buildBody(spec, values) {
 }
 
 async function runSharePoint(spec, values) {
-  const endpoint = addQuery(replacePlaceholders(spec.path, values), spec.query, values);
-  const body = buildBody(spec, values);
+  const { endpoint, body } = buildSharePointRequest(spec, values);
   return executeSharePointRequest(spec, endpoint, body);
+}
+
+function buildSharePointRequest(spec, values) {
+  return {
+    endpoint: addQuery(replacePlaceholders(spec.path, values), spec.query, values),
+    body: buildBody(spec, values),
+  };
 }
 
 function doctor() {
@@ -333,6 +339,7 @@ module.exports = {
   renderVerbHelp,
   envelope,
   gitPullMadeNoChanges,
+  buildSharePointRequest,
   runSharePoint,
   selfUpdate,
 };

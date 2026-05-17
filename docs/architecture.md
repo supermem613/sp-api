@@ -80,6 +80,7 @@ Reference files provide background REST details only after a capability has been
 | Raw HTTP fallback | Not supported | Missing coverage should become a semantic verb |
 | Output | JSON envelope | Stable machine-readable agent contract |
 | Self-update | `sp-api update` | Git-clone installs can pull, install, and rebuild in one command |
+| Session filesystem | Not folded in | `sp-api` keeps stateless semantic verbs; loopback sessions and raw template execution stay outside the contract |
 
 ### What This CLI Cannot Do
 
@@ -91,3 +92,4 @@ Reference files provide background REST details only after a capability has been
 | Sharing links | No current semantic command | Add a capability when supported |
 | Enterprise-wide M365 search | Current scope is SharePoint-site-oriented | Use M365 or SharePoint admin tools |
 | Server-side code execution | SharePoint sandboxing | Run code locally |
+| Raw request-template execution | Would bypass the semantic registry | Add a bounded verb such as `pages publish` or `permissions get` |

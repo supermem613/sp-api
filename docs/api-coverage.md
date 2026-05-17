@@ -9,8 +9,12 @@
 | Group | Verbs | Notes |
 |-------|-------|-------|
 | `auth` | `login`, `logout`, `status` | Playwright Edge persistent-context auth |
-| `lists` | `list`, `get`, `create`, `delete`, `items`, `add-item`, `update-item`, `delete-item` | List discovery and core item CRUD |
-| `files` | `list`, `get`, `download`, `upload`, `delete`, `move`, `copy` | Folder/file operations for small text uploads and common file movement |
+| `lists` | `list`, `get`, `fields`, `create`, `delete`, `items`, `add-item`, `update-item`, `delete-item` | List discovery, field schema, and core item CRUD |
+| `files` | `list`, `get`, `folder`, `download`, `upload`, `delete`, `recycle`, `move`, `copy` | Folder/file operations for small text uploads, folder expansion, recycle, and common file movement |
+| `search` | `query` | Site-scoped SharePoint search with explicit query text and result shaping |
+| `sites` | `get`, `discovery` | Site metadata and visible list/library discovery |
+| `pages` | `list`, `get`, `checkout`, `save-fields`, `publish`, `discard-checkout` | Modern Site Pages read and lifecycle operations |
+| `permissions` | `get` | Web-level role assignment inspection |
 | `schema` | `show` | Machine-readable contract for all groups and verbs |
 | `doctor` | `run` | Local health checks |
 
@@ -20,6 +24,8 @@ Inspect the live contract:
 sp-api schema
 sp-api schema lists add-item
 sp-api schema files upload
+sp-api schema pages publish
+sp-api schema search query
 ```
 
 ## Planned Capability Groups
@@ -28,11 +34,11 @@ These are exposed as planned groups in `sp-api schema` but are not implemented a
 
 | Group | Planned verbs |
 |-------|---------------|
-| `search` | `query`, `people` |
-| `pages` | `list`, `get`, `create`, `update`, `publish`, `delete` |
+| `search` | `people` |
+| `pages` | `create`, `delete` |
 | `users` | `list`, `get`, `me`, `ensure` |
-| `permissions` | `get`, `grant`, `revoke`, `break-inheritance`, `reset-inheritance` |
-| `sites` | `get`, `subsites`, `navigation` |
+| `permissions` | `grant`, `revoke`, `break-inheritance`, `reset-inheritance` |
+| `sites` | `subsites`, `navigation` |
 
 ## Adding Coverage
 

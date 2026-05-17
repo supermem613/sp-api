@@ -165,6 +165,27 @@ describe('SharePoint REST module', () => {
     assert.strictEqual(calls[1].options.headers['X-HTTP-Method'], 'PATCH');
     assert.strictEqual(calls[1].options.headers['If-Match'], '*');
   });
+
+  it('honors per-verb REST accept and content type overrides', async () => {
+    const calls = [];
+    await executeSharePointRequest(
+      { method: 'POST', accept: 'application/json;odata=verbose', contentType: 'application/json;odata=nometadata' },
+      '_api/web/example',
+      '{"Title":"Example"}',
+      {
+        auth: { SP_SITE: 'https://contoso.sharepoint.com/sites/team', SP_TOKEN: 'token' },
+        fetch: async (url, options) => {
+          calls.push({ url, options });
+          if (url.endsWith('/_api/contextinfo')) {
+            return { ok: true, status: 200, text: async () => '{"FormDigestValue":"digest"}' };
+          }
+          return { ok: true, status: 200, text: async () => '{"ok":true}' };
+        },
+      },
+    );
+    assert.strictEqual(calls[1].options.headers.Accept, 'application/json;odata=verbose');
+    assert.strictEqual(calls[1].options.headers['Content-Type'], 'application/json;odata=nometadata');
+  });
 });
 
 describe('SharePoint fetch module', () => {

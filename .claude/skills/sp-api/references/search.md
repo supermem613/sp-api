@@ -1,16 +1,26 @@
 # SharePoint Search
 
-`search` is a planned `sp-api` capability group. Inspect planned capabilities with:
+`search` is an implemented `sp-api` capability group for bounded SharePoint search.
 
 ```bash
-sp-api schema
+sp-api schema search
+sp-api schema search query
 ```
 
-Planned verbs:
+Implemented verbs:
 
 | Verb | Purpose |
 |------|---------|
 | `query` | Site-scoped SharePoint search |
-| `people` | People-oriented search |
 
-Until the group is implemented, report missing search coverage instead of falling back to raw HTTP. The intended implementation should expose query text, row limit, selected properties, and refiners as explicit schema params.
+Prompt pattern:
+
+> Search this SharePoint site for `<terms>` and return the title and path of the best matches.
+
+Use:
+
+```bash
+sp-api search query --query "<terms>" --row-limit 10 --select-properties Title,Path,LastModifiedTime
+```
+
+Do not ask agents to call raw `_api/search/query`. If people search or refiners are needed, inspect `sp-api schema` and report the missing semantic verb.

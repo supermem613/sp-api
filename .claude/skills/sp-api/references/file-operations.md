@@ -12,10 +12,12 @@ sp-api files --help
 | Task | Command |
 |------|---------|
 | List files in a folder | `sp-api files list --folder "/sites/team/Shared Documents"` |
+| Expand child folders and files | `sp-api files folder --folder "/sites/team/Shared Documents"` |
 | Get file metadata | `sp-api files get --path "/sites/team/Shared Documents/doc.txt"` |
 | Download file content | `sp-api files download --path "/sites/team/Shared Documents/doc.txt"` |
 | Upload small text content | `sp-api files upload --folder "/sites/team/Shared Documents" --name notes.txt --content "hello"` |
 | Delete file | `sp-api files delete --path "/sites/team/Shared Documents/old.txt"` |
+| Recycle file | `sp-api files recycle --path "/sites/team/Shared Documents/old.txt"` |
 | Move file | `sp-api files move --path "/sites/team/Shared Documents/a.txt" --destination "/sites/team/Shared Documents/b.txt"` |
 | Copy file | `sp-api files copy --path "/sites/team/Shared Documents/a.txt" --destination "/sites/team/Shared Documents/copy.txt"` |
 
@@ -23,6 +25,8 @@ sp-api files --help
 
 ```bash
 sp-api schema files upload
+sp-api schema files folder
+sp-api schema files recycle
 sp-api schema files move
 ```
 
@@ -40,4 +44,4 @@ Folder commands use the folder path. File commands use the full file path.
 
 ## Current limits
 
-The current `files.upload` command is for small text content. Binary uploads, chunked uploads, folders, versions, check-in/check-out, and folder color should become explicit capability verbs before agents rely on them. Do not fall back to raw HTTP.
+The current `files.upload` command is for small text content. Binary uploads, chunked uploads, folder creation, versions, check-in/check-out, and folder color should become explicit capability verbs before agents rely on them. Do not fall back to raw HTTP.

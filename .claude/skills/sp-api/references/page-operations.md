@@ -1,20 +1,38 @@
 # SharePoint Page Operations
 
-`pages` is a planned `sp-api` capability group. Inspect planned capabilities with:
+`pages` is implemented for listing, reading, field updates, checkout, publish, and discard-checkout for modern Site Pages.
 
 ```bash
-sp-api schema
+sp-api schema pages
+sp-api pages list
 ```
 
-Planned verbs:
+Implemented verbs:
 
 | Verb | Purpose |
 |------|---------|
 | `list` | List site pages |
 | `get` | Get page metadata/content |
-| `create` | Create a page |
-| `update` | Update page metadata/content |
+| `checkout` | Check out a page by server-relative path |
+| `save-fields` | Update Site Pages list item fields by item id |
 | `publish` | Publish a page |
-| `delete` | Delete a page |
+| `discard-checkout` | Discard a page checkout |
 
-Modern page APIs have SharePoint-specific edge cases such as publish/edit conflicts. Capture those as schema docs and command behavior when the capability is implemented. Do not route agents to raw REST as a fallback.
+Prompt patterns:
+
+> List pages and read the page named Home.
+
+```bash
+sp-api pages list
+sp-api pages get --path "/sites/team/SitePages/Home.aspx"
+```
+
+> Update the page title and publish it.
+
+```bash
+sp-api pages checkout --path "/sites/team/SitePages/Home.aspx"
+sp-api pages save-fields --item-id 42 --body '{"Title":"New title"}'
+sp-api pages publish --path "/sites/team/SitePages/Home.aspx" --comment "Published by sp-api"
+```
+
+Use server-relative `--path` for file lifecycle verbs. Use `--item-id` for `save-fields` because it updates the backing Site Pages list item. Do not route agents to raw REST as a fallback.
