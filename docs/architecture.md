@@ -1,114 +1,93 @@
 ## Architecture & Design Decisions
 
 ### What This Is
-A skill that teaches AI agents (Claude Code, GitHub Copilot, Codex) to interact with SharePoint Online via the SharePoint REST API. Rather than wrapping each operation in a fixed tool signature, the skill provides the agent with knowledge about how to call the APIs directly.
 
-### Why a Skill Instead of an MCP Server
+This is a SharePoint Online CLI with a bundled skill router. The `sp-api` CLI is the product surface: it maps capability verbs to SharePoint REST implementation details and returns stable JSON envelopes. Agents may load the bundled `SKILL.md`, but that skill only routes them to the CLI.
 
-The skill approach wins because:
-- **Zero runtime dependencies** — no server required at execution time; only Node.js + Playwright for auth
-- **Cross-platform** — works on Windows, macOS, Linux
-- **Agent flexibility** — the agent composes, retries, and adapts freely
-- **LLM-native** — Claude IS an LLM; operations that use LLMs (NL-to-CAML, file classification, column suggestions) are redundant
-- **Maintenance** — REST APIs are stable; SKILL.md doesn't need updates when upstream services change
+### Why a CLI with a Bundled Skill Instead of an MCP Server
+
+- **Agentic command surface** — agents call `sp-api lists items`, `sp-api files upload`, and `sp-api schema`, not raw HTTP helpers.
+- **No long-running server** — commands are short-lived and work in normal shells.
+- **Cross-platform** — Node.js and Playwright work on Windows, macOS, and Linux.
+- **Generated contract** — schema, help, and the skill router come from one registry.
+- **Auth isolation** — Playwright is limited to `sp-api auth`; REST commands stay on the lightweight hot path.
+
+### Command Architecture
+
+```text
+Agent loads SKILL.md
+    |
+    v
+sp-api <capability> <verb>
+    |
+    +-- src/registry.js        capability specs, params, examples, endpoints
+    +-- src/renderers.js       generated help, schema, SKILL router
+    +-- src/sp-api-core.js     dispatcher and JSON envelopes
+    +-- src/sharepoint-auth.js Playwright auth and auth state
+    +-- src/sharepoint-rest.js SharePoint REST execution
+    +-- src/sharepoint-fetch.js retry and diagnostics
+    |
+    v
+SharePoint Online
+```
+
+The CLI owns the implementation. The skill directory contains only the router and lazy-loaded references.
 
 ### Auth Architecture
 
-```
-┌──────────────────────────────────────────────────┐
-│                  Auth Layer                        │
-│                                                    │
-│  ┌─────────┐  Playwright Persistent  ┌─────────┐ │
-│  │ sp-auth  │  Context (msedge)      │ Edge     │ │
-│  │ .js      │───────────────────────▶│ Browser  │ │
-│  │          │◀── FedAuth + rtFa ─────│ Profile  │ │
-│  └─────────┘    cookies              └─────────┘ │
-│       │                                           │
-│       │  Profile: ~/.sharepoint-api-skill/        │
-│       │           browser-profile/                │
-└──────────────────────────────────────────────────┘
-                    │
-                    ▼ SP_COOKIES + SP_SITE
-┌──────────────────────────────────────────────────┐
-│              HTTP Helper Scripts                   │
-│  sp-get, sp-post                                   │
-└──────────────────────────────────────────────────┘
-                    │
-          ┌──────────┼──────────┐
-          ▼                     ▼
-   ┌──────────┐          ┌───────────┐
-   │ SP REST  │          │ SP Search │
-   │ /_api/   │          │ /_api/    │
-   │ web/...  │          │ search/   │
-   └──────────┘          └───────────┘
+```text
+sp-api auth login
+    |
+    v
+src/sharepoint-auth.js
+    |
+    v
+Playwright persistent Edge context
+    |
+    +-- profile: ~/.sp-api/browser-profile/
+    +-- auth:    ~/.sp-api/auth.json
 ```
 
-### Skill Loading Architecture
+Only the auth path loads Playwright. Tests assert that REST capability files do not import Playwright.
 
-```
-Agent loads SKILL.md (~2K tokens)
-    │
-    ├─ Auth setup (one-time)
-    ├─ Quick reference (10 common ops)
-    ├─ Script usage patterns
-    └─ Reference file index
-         │
-         └─ On demand: agent loads specific reference file
-            ├─ list-operations.md (list CRUD, CAML, views)
-            ├─ file-operations.md (files, folders, versions)
-            ├─ search.md (SP Search, KQL)
-            ├─ site-discovery.md (lists, fields, content types)
-            ├─ page-operations.md (pages, news)
-            ├─ user-permissions.md (users, permissions)
-            ├─ advanced-operations.md (recycle bin, navigation)
-            └─ api-patterns.md (pagination, $filter, CAML)
+### Bundled Skill Architecture
+
+```text
+Agent loads SKILL.md
+    |
+    +-- command model
+    +-- schema/help routing
+    +-- reference file index
+    |
+    v
+Agent calls sp-api schema <capability> <verb>
+    |
+    v
+Agent calls semantic command
 ```
 
-### Scripts
-
-| Script | Purpose |
-|--------|---------|
-| `sp-auth.js` | Authenticate via Playwright — writes auth.json |
-| `sp-env.js` | Shared auth loader — resolves SP_SITE, SP_COOKIES from env/file |
-| `sp-get.js` | SharePoint REST GET |
-| `sp-post.js` | SharePoint REST POST/PATCH/DELETE (auto-fetches request digest) |
-
-### Reference Guides
-
-8 domain-specific files loaded on demand by the agent (keeps base token cost low at ~2K):
-
-| Reference | Covers |
-|-----------|--------|
-| `list-operations.md` | List/item CRUD, views, filters, CAML queries |
-| `file-operations.md` | Upload, download, copy, move, versions, folders |
-| `search.md` | SP Search, KQL syntax |
-| `page-operations.md` | Modern pages, news posts, publishing |
-| `user-permissions.md` | Users, permissions |
-| `site-discovery.md` | Site properties, lists, fields, content types |
-| `api-patterns.md` | OData, batching, throttling, CAML |
-| `advanced-operations.md` | Recycle bin, navigation, features |
+Reference files provide background REST details only after a capability has been selected. They should not route agents around `sp-api`.
 
 ### Design Decisions Log
 
 | Decision | Chosen | Why |
 |----------|--------|-----|
-| Skill vs MCP | Skill | Zero deps, cross-platform, agent flexibility |
-| Auth method | Playwright persistent context | No app registration, zero IT approval, full SP REST access, persistent login |
-| Script language | Node.js only | Cross-platform, no shell dependencies |
-| API approach | SP REST | SP REST for all operations, cookies-based auth |
-| Token parsing | JSON via Node.js | Built-in, no external tools |
-| Reference files | Lazy-loaded | Token efficiency (~2K base vs ~20K all) |
+| Product form | CLI with bundled skill | Tested CLI owns behavior. Skill is a thin router |
+| Primary surface | `sp-api` semantic commands | Capability-oriented and agentic |
+| Source of truth | `src/registry.js` | Schema/help/SKILL/tests cannot drift |
+| Auth method | Playwright persistent context | No app registration, browser-equivalent access |
+| Auth boundary | `sp-api auth` only | Prevents Playwright from entering REST hot path |
+| Raw HTTP fallback | Not supported | Missing coverage should become a semantic verb |
+| Output | JSON envelope | Stable machine-readable agent contract |
+| Self-update | `sp-api update` | Git-clone installs can pull, install, and rebuild in one command |
 
-### What This Skill Cannot Do
+### What This CLI Cannot Do
 
 | Capability | Why | Workaround |
 |-----------|-----|-----------|
-| RAG-backed grounded Q&A | Requires proprietary backend | Agent reads files + reasons itself |
-| Enterprise RAG grounding | Requires proprietary orchestration | SP Search + file content reading |
-| Email sending | No SP REST equivalent | Use Outlook or other email tools |
-| Teams messaging | No SP REST equivalent | Use Teams directly |
-| Sharing links | No SP REST equivalent | Share via SharePoint UI |
-| Enterprise-wide search (across all M365) | SP REST search is site-scoped only | Use SharePoint admin or M365 tools |
-| UI operations | No browser at runtime | Not needed for CLI agents |
-| Server-side code execution | Sandboxed environment | Agent runs code locally |
-| NL-to-CAML via LLM | Redundant | Agent generates CAML itself (it IS an LLM) |
+| Raw arbitrary HTTP passthrough | Deliberately excluded to keep the CLI semantic | Add a capability verb |
+| Email sending | No SharePoint REST equivalent | Use Outlook or other mail tools |
+| Teams messaging | No SharePoint REST equivalent | Use Teams tools |
+| Sharing links | No current semantic command | Add a capability when supported |
+| Enterprise-wide M365 search | Current scope is SharePoint-site-oriented | Use M365 or SharePoint admin tools |
+| Server-side code execution | SharePoint sandboxing | Run code locally |

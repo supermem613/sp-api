@@ -1,287 +1,195 @@
 #!/usr/bin/env node
-// Dry-run script validation — no network calls
-// Run: node --test tests/test-scripts.js
+'use strict';
 
 const { describe, it } = require('node:test');
 const assert = require('node:assert');
-const { execSync } = require('node:child_process');
-const { existsSync, readFileSync } = require('node:fs');
+const { existsSync, readFileSync, mkdtempSync, rmSync, writeFileSync } = require('node:fs');
+const { tmpdir } = require('node:os');
 const { join } = require('node:path');
+const { pathToFileURL } = require('node:url');
+const { authenticate, authStatus, buildCookieString, logout, parseSiteInput, readAuthFile } = require('../src/sharepoint-auth');
+const { executeSharePointRequest, loadAuth, parseResponseBody } = require('../src/sharepoint-rest');
+const { extractCode, formatError, spFetch } = require('../src/sharepoint-fetch');
 
-const scriptsDir = join(__dirname, '..', '.claude', 'skills', 'sharepoint-api', 'scripts');
+describe('sp-api source ownership', () => {
+  it('keeps implementation logic in src instead of the skill directory', () => {
+    assert.ok(existsSync(join(__dirname, '..', 'src', 'sharepoint-auth.js')));
+    assert.ok(existsSync(join(__dirname, '..', 'src', 'sharepoint-rest.js')));
+    assert.ok(existsSync(join(__dirname, '..', 'src', 'sharepoint-fetch.js')));
+    assert.strictEqual(existsSync(join(__dirname, '..', '.claude', 'skills', 'sp-api', 'scripts')), false);
+  });
 
-/**
- * Run a Node.js script in a child process with a clean env.
- * Returns { exitCode, stdout, stderr }.
- */
-function runScript(scriptName, args = [], env = {}) {
-  const scriptPath = join(scriptsDir, scriptName);
-  // Use a fake HOME so sp-env.js can't load cached auth.json
-  const fakeHome = join(__dirname, '.test-home');
-  const cleanEnv = {
-    PATH: process.env.PATH,
-    HOME: fakeHome,
-    USERPROFILE: fakeHome,
-    HOMEDRIVE: fakeHome.slice(0, 2),
-    HOMEPATH: fakeHome.slice(2),
-    SystemRoot: process.env.SystemRoot || '',
-    ...env
-  };
-  try {
-    const stdout = execSync(`node "${scriptPath}" ${args.map(a => `"${a}"`).join(' ')}`, {
-      env: cleanEnv, encoding: 'utf8', timeout: 10000, stdio: ['pipe', 'pipe', 'pipe']
+  it('keeps doctor output focused on sp-api modules', () => {
+    const core = readFileSync(join(__dirname, '..', 'src', 'sp-api-core.js'), 'utf8');
+    assert.doesNotMatch(core, /Legacy/);
+  });
+});
+
+describe('SharePoint auth module', () => {
+  it('parses SharePoint site input', () => {
+    assert.deepStrictEqual(parseSiteInput('https://contoso.sharepoint.com/sites/team/'), {
+      tenantHost: 'contoso.sharepoint.com',
+      sitePath: '/sites/team',
     });
-    return { exitCode: 0, stdout, stderr: '' };
-  } catch (e) {
-    return { exitCode: e.status ?? 1, stdout: e.stdout ?? '', stderr: e.stderr ?? '' };
-  }
-}
-
-/**
- * Read script source for static analysis tests.
- */
-function readScript(scriptName) {
-  return readFileSync(join(scriptsDir, scriptName), 'utf8');
-}
-
-// ============================================================================
-// 1. File existence
-// ============================================================================
-describe('File existence', () => {
-  for (const s of ['sp-get.js', 'sp-post.js', 'sp-auth.js', 'sp-env.js', 'sp-fetch.js']) {
-    it(`${s} exists`, () => {
-      assert.ok(existsSync(join(scriptsDir, s)), `${s} not found`);
-    });
-  }
-});
-
-// ============================================================================
-// 2. Shebang line
-// ============================================================================
-describe('Has shebang line', () => {
-  for (const s of ['sp-get.js', 'sp-post.js', 'sp-auth.js', 'sp-env.js']) {
-    it(`${s} has node shebang`, () => {
-      const first = readScript(s).split(/\r?\n/)[0];
-      assert.match(first, /node/, `${s} should have node shebang`);
-    });
-  }
-});
-
-// ============================================================================
-// 3. Error on missing arguments
-// ============================================================================
-describe('Error on missing arguments', () => {
-  it('sp-get.js fails with no args', () => {
-    const r = runScript('sp-get.js');
-    assert.notStrictEqual(r.exitCode, 0, 'Expected non-zero exit code');
   });
 
-  it('sp-post.js fails with no args', () => {
-    const r = runScript('sp-post.js');
-    assert.notStrictEqual(r.exitCode, 0, 'Expected non-zero exit code');
+  it('builds a cookie string from tenant cookies', () => {
+    const cookies = [
+      { name: 'FedAuth', value: 'a', domain: '.contoso.sharepoint.com' },
+      { name: 'rtFa', value: 'b', domain: '.sharepoint.com' },
+      { name: 'Other', value: 'c', domain: '.example.com' },
+    ];
+    assert.strictEqual(buildCookieString(cookies, 'contoso.sharepoint.com'), 'FedAuth=a; rtFa=b');
   });
 
-});
-
-// ============================================================================
-// 4. Error on missing environment variables
-// ============================================================================
-describe('Error on missing environment variables', () => {
-  it('sp-get.js fails when SP_SITE is missing', () => {
-    const r = runScript('sp-get.js', ['/_api/web'], { SP_TOKEN: 'fake' });
-    assert.notStrictEqual(r.exitCode, 0);
-    assert.match(r.stderr, /SP_SITE/, 'Error should mention SP_SITE');
+  it('reports auth status from the auth file', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'sp-api-auth-'));
+    try {
+      const authFile = join(dir, 'auth.json');
+      writeFileSync(authFile, JSON.stringify({ SP_SITE: 'https://contoso.sharepoint.com/sites/team', SP_COOKIES: 'FedAuth=a' }));
+      assert.deepStrictEqual(authStatus(authFile), {
+        authFile,
+        exists: true,
+        site: 'https://contoso.sharepoint.com/sites/team',
+        hasCookies: true,
+        hasToken: false,
+      });
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 
-  it('sp-get.js fails when SP_TOKEN and SP_COOKIES are both missing', () => {
-    const r = runScript('sp-get.js', ['/_api/web'], { SP_SITE: 'https://test.sharepoint.com/sites/testsite' });
-    assert.notStrictEqual(r.exitCode, 0);
-    assert.match(r.stderr, /auth/, 'Error should mention auth');
+  it('logs out by clearing auth state paths', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'sp-api-logout-'));
+    try {
+      const profileDir = join(dir, 'profile');
+      const authFile = join(dir, 'auth.json');
+      writeFileSync(authFile, '{}');
+      writeFileSync(join(dir, 'profile-marker'), '');
+      require('node:fs').mkdirSync(profileDir);
+      const result = logout({ profileDir, authFile });
+      assert.strictEqual(result.cleared, true);
+      assert.strictEqual(existsSync(authFile), false);
+      assert.strictEqual(existsSync(profileDir), false);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 
-  it('sp-post.js fails when SP_SITE is missing', () => {
-    const r = runScript('sp-post.js', ['/_api/web/lists', '{}'], { SP_TOKEN: 'fake' });
-    assert.notStrictEqual(r.exitCode, 0);
-    assert.match(r.stderr, /SP_SITE/, 'Error should mention SP_SITE');
-  });
-
-  it('sp-post.js fails when SP_TOKEN and SP_COOKIES are both missing', () => {
-    const r = runScript('sp-post.js', ['/_api/web/lists', '{}'], { SP_SITE: 'https://test.sharepoint.com/sites/testsite' });
-    assert.notStrictEqual(r.exitCode, 0);
-    assert.match(r.stderr, /auth/, 'Error should mention auth');
-  });
-
-});
-
-// ============================================================================
-// 5. Helpful error messages reference sp-auth
-// ============================================================================
-describe('Helpful error messages reference sp-auth', () => {
-  it('sp-get.js error mentions sp-auth', () => {
-    const r = runScript('sp-get.js', ['/_api/web']);
-    assert.match(r.stderr, /sp-auth/, 'Error should reference sp-auth');
-  });
-
-  it('sp-post.js error mentions sp-auth', () => {
-    const r = runScript('sp-post.js', ['/_api/web', '{}']);
-    assert.match(r.stderr, /sp-auth/, 'Error should reference sp-auth');
-  });
-
-});
-
-// ============================================================================
-// 6. sp-auth.js validation
-// ============================================================================
-describe('sp-auth.js validation', () => {
-  const content = readScript('sp-auth.js');
-
-  it('sp-auth.js uses playwright', () => {
-    assert.match(content, /playwright/, 'sp-auth.js should use playwright');
-  });
-
-  it('sp-auth.js handles --login flag', () => {
-    assert.match(content, /--login/, 'sp-auth.js should handle --login flag');
-  });
-
-  it('sp-auth.js handles --logout flag', () => {
-    assert.match(content, /--logout/, 'sp-auth.js should handle --logout flag');
-  });
-
-  it('sp-auth.js writes auth.json', () => {
-    assert.match(content, /auth\.json/, 'sp-auth.js should write auth.json');
-  });
-
-  it('sp-auth.js has protocol strip logic', () => {
-    assert.match(content, /https?:\/\//, 'sp-auth.js should have protocol stripping');
-  });
-});
-
-// ============================================================================
-// 7. sp-env.js validation
-// ============================================================================
-describe('sp-env.js validation', () => {
-  const content = readScript('sp-env.js');
-
-  it('reads from auth.json', () => {
-    assert.match(content, /auth\.json/, 'sp-env.js should read auth.json');
-  });
-
-  it('checks environment variables first', () => {
-    assert.match(content, /process\.env/, 'sp-env.js should check process.env');
-  });
-});
-
-// ============================================================================
-// 8. No shell scripts in scripts directory
-// ============================================================================
-describe('No shell scripts', () => {
-  it('no .sh files in scripts directory', () => {
-    const files = require('fs').readdirSync(scriptsDir);
-    const shFiles = files.filter(f => f.endsWith('.sh'));
-    assert.deepStrictEqual(shFiles, [], `Unexpected .sh files: ${shFiles.join(', ')}`);
-  });
-
-  it('no .ps1 files in scripts directory', () => {
-    const files = require('fs').readdirSync(scriptsDir);
-    const ps1Files = files.filter(f => f.endsWith('.ps1'));
-    assert.deepStrictEqual(ps1Files, [], `Unexpected .ps1 files: ${ps1Files.join(', ')}`);
-  });
-});
-
-// ============================================================================
-// 9. sp-post.js method override
-// ============================================================================
-describe('sp-post.js method override', () => {
-  const content = readScript('sp-post.js');
-
-  it('accepts 3rd argument for method override', () => {
-    assert.match(content, /methodOverride|argv\[4\]/, 'sp-post.js should accept a 3rd positional argument for method override');
-  });
-
-  it('supports PATCH method', () => {
-    assert.match(content, /PATCH/, 'sp-post.js should reference PATCH method');
-  });
-
-  it('supports DELETE method', () => {
-    assert.match(content, /DELETE/, 'sp-post.js should reference DELETE method');
-  });
-
-  it('sets X-HTTP-Method header for override', () => {
-    assert.match(content, /X-HTTP-Method/, 'sp-post.js should set X-HTTP-Method header');
-  });
-});
-
-// ============================================================================
-// 10. sp-auth.js token extraction from browser session
-// ============================================================================
-describe('sp-auth.js token extraction', () => {
-  const content = readScript('sp-auth.js');
-
-  it('intercepts network requests for Bearer tokens', () => {
-    assert.match(content, /\.on\(['"]request['"]/, 'sp-auth.js should register request interceptor');
-  });
-
-  it('captures SP tokens from sharepoint requests', () => {
-    assert.match(content, /\.sharepoint\./, 'sp-auth.js should look for SP tokens');
-  });
-
-  it('outputs SP_TOKEN in auth.json', () => {
-    assert.match(content, /SP_TOKEN/, 'sp-auth.js should save SP_TOKEN');
-  });
-
-  it('does not use any external OAuth client IDs', () => {
-    assert.doesNotMatch(content, /04b07795-8ddb-461a-bbee-02f9e1bf7b46/,
-      'sp-auth.js must not use Azure CLI client ID');
-  });
-});
-
-// ============================================================================
-// 11. All scripts are Node.js only
-// ============================================================================
-describe('All scripts are Node.js', () => {
-  it('every file in scripts/ is a .js file', () => {
-    const files = require('fs').readdirSync(scriptsDir);
-    for (const f of files) {
-      assert.ok(f.endsWith('.js'), `Non-JS file found: ${f}`);
+  it('authenticates with injectable Playwright and writes auth.json', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'sp-api-playwright-'));
+    try {
+      const authFile = join(dir, 'auth.json');
+      const page = {
+        on: () => {},
+        goto: async () => {},
+        url: () => 'https://contoso.sharepoint.com/sites/team',
+        waitForLoadState: async () => {},
+      };
+      const context = {
+        pages: () => [page],
+        cookies: async () => [{ name: 'FedAuth', value: 'a', domain: '.contoso.sharepoint.com' }],
+        close: async () => {},
+      };
+      const playwright = {
+        chromium: {
+          launchPersistentContext: async () => context,
+        },
+      };
+      const result = await authenticate('contoso.sharepoint.com/sites/team', { playwright, authFile, profileDir: join(dir, 'profile') });
+      assert.strictEqual(result.siteUrl, 'https://contoso.sharepoint.com/sites/team');
+      assert.strictEqual(readAuthFile(authFile).SP_COOKIES, 'FedAuth=a');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
     }
   });
 });
 
-// ============================================================================
-// 12. sp-fetch.js validation
-// ============================================================================
-describe('sp-fetch.js validation', () => {
-  const content = readScript('sp-fetch.js');
-
-  it('exports spFetch function', () => {
-    assert.match(content, /spFetch/, 'sp-fetch.js should export spFetch');
+describe('SharePoint REST module', () => {
+  it('loads auth from auth.json and rejects missing credentials', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'sp-api-rest-'));
+    try {
+      const authFile = join(dir, 'auth.json');
+      assert.throws(() => loadAuth(authFile), /Run sp-api auth login/);
+      writeFileSync(authFile, JSON.stringify({ SP_SITE: 'https://contoso.sharepoint.com/sites/team' }));
+      assert.throws(() => loadAuth(authFile), /credentials/);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 
-  it('has retry logic', () => {
-    assert.match(content, /RETRYABLE|retry/i, 'sp-fetch.js should have retry logic');
+  it('parses JSON, text, and empty response bodies', () => {
+    assert.deepStrictEqual(parseResponseBody('{"value":1}'), { value: 1 });
+    assert.strictEqual(parseResponseBody('plain'), 'plain');
+    assert.strictEqual(parseResponseBody(''), null);
   });
 
-  it('walks error cause chain', () => {
-    assert.match(content, /\.cause/, 'sp-fetch.js should walk error cause chain');
+  it('executes GET requests through the built-in REST client', async () => {
+    const calls = [];
+    const result = await executeSharePointRequest(
+      { method: 'GET' },
+      '_api/web',
+      '',
+      {
+        auth: { SP_SITE: 'https://contoso.sharepoint.com/sites/team', SP_COOKIES: 'FedAuth=a' },
+        fetch: async (url, options) => {
+          calls.push({ url, options });
+          return { ok: true, status: 200, text: async () => '{"Title":"Team"}' };
+        },
+      },
+    );
+    assert.strictEqual(result.data.Title, 'Team');
+    assert.strictEqual(calls[0].url, 'https://contoso.sharepoint.com/sites/team/_api/web');
+    assert.strictEqual(calls[0].options.method, 'GET');
   });
 
-  it('produces actionable hints', () => {
-    assert.match(content, /Hint:/, 'sp-fetch.js should include hints in error messages');
+  it('fetches a digest and uses method override for mutations', async () => {
+    const calls = [];
+    const result = await executeSharePointRequest(
+      { method: 'PATCH' },
+      '_api/web/lists',
+      '{"Title":"New"}',
+      {
+        auth: { SP_SITE: 'https://contoso.sharepoint.com/sites/team', SP_TOKEN: 'token' },
+        fetch: async (url, options) => {
+          calls.push({ url, options });
+          if (url.endsWith('/_api/contextinfo')) {
+            return { ok: true, status: 200, text: async () => '{"FormDigestValue":"digest"}' };
+          }
+          return { ok: true, status: 204, text: async () => '' };
+        },
+      },
+    );
+    assert.strictEqual(result.data, null);
+    assert.strictEqual(calls[1].options.method, 'POST');
+    assert.strictEqual(calls[1].options.headers['X-HTTP-Method'], 'PATCH');
+    assert.strictEqual(calls[1].options.headers['If-Match'], '*');
   });
 });
 
-// ============================================================================
-// 13. No external npm dependencies (require of local sp-env is OK)
-// ============================================================================
-describe('No external npm dependencies', () => {
-  for (const s of ['sp-get.js', 'sp-post.js']) {
-    it(`${s} only requires local modules`, () => {
-      const content = readScript(s);
-      // Should not require any npm packages (only ./sp-env is allowed)
-      const requires = content.match(/require\s*\(\s*['"]([^'"]+)['"]\s*\)/g) || [];
-      for (const r of requires) {
-        assert.match(r, /['"]\.\//, `${s} should only require local modules, found: ${r}`);
-      }
+describe('SharePoint fetch module', () => {
+  it('walks nested error causes', () => {
+    assert.strictEqual(extractCode({ cause: { code: 'ETIMEDOUT' } }), 'ETIMEDOUT');
+  });
+
+  it('formats actionable network errors', () => {
+    assert.match(formatError({ message: 'failed', code: 'ENOTFOUND' }), /Hint: DNS lookup failed/);
+  });
+
+  it('retries retryable fetch failures without shelling out', async () => {
+    let attempts = 0;
+    const response = await spFetch(pathToFileURL(__filename).toString(), {}, {
+      fetch: async () => {
+        attempts++;
+        if (attempts === 1) {
+          const err = new Error('timeout');
+          err.code = 'ETIMEDOUT';
+          throw err;
+        }
+        return { ok: true };
+      },
     });
-  }
+    assert.strictEqual(response.ok, true);
+    assert.strictEqual(attempts, 2);
+  });
 });

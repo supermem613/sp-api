@@ -1,114 +1,111 @@
-# SharePoint API Skill — Setup Guide
+# sp-api Setup Guide
 
-This guide covers how to authenticate with SharePoint so the skill can make API calls on your behalf.
+This guide covers installing and authenticating the `sp-api` CLI. The repo also ships a thin skill router that agents can load after the CLI is installed.
 
 ---
 
-## One-Time Setup
+## Install
 
-### Install Dependencies
-
-```
-cd <skill-directory>
+```bash
+cd <repo-root>
 npm install
+npm run build
+npm link
 ```
 
-This installs Playwright, which is used for browser-based authentication.
+Verify the CLI:
 
-### First Authentication
-
+```bash
+sp-api doctor
+sp-api schema auth login
 ```
-node scripts/sp-auth.js contoso.sharepoint.com/sites/mysite
+
+`npm install` installs Playwright, which is used only by `sp-api auth`. `npm run build` validates the CLI, generated skill router, and bin wiring before `npm link` exposes `sp-api` on your PATH.
+
+Update a linked or git-clone install later with:
+
+```bash
+sp-api update
 ```
 
-Replace `contoso.sharepoint.com/sites/mysite` with your actual site URL.
+## Authenticate
 
-On first run, Edge opens a visible browser window. Sign in with your Microsoft account. Once login completes, the browser closes automatically and your session is saved to a local profile.
+```bash
+sp-api auth login --site contoso.sharepoint.com/sites/mysite
+```
 
-### Subsequent Runs
+Replace `contoso.sharepoint.com/sites/mysite` with your site URL.
 
-Run the same auth command. It launches Edge headlessly (no visible window), reads the saved profile, extracts cookies, and saves them to `~/.sharepoint-api-skill/auth.json` — typically completing in under 2 seconds.
+On first run, Edge may open a visible browser window. Sign in with your Microsoft account. Once login completes, the browser closes and your session is saved to a local profile.
 
-### What Gets Saved
+Subsequent runs use the saved profile headlessly, extract cookies, and update `~/.sp-api/auth.json`.
 
-Auth credentials are saved to `~/.sharepoint-api-skill/auth.json`:
+## What Gets Saved
+
+Auth credentials are saved to `~/.sp-api/auth.json`:
 
 | Field | Description |
 |-------|-------------|
-| `SP_COOKIES` | FedAuth + rtFa cookies for SharePoint REST API calls |
-| `SP_SITE` | Full site URL (e.g., `https://contoso.sharepoint.com/sites/mysite`) |
+| `SP_SITE` | Full site URL |
+| `SP_COOKIES` | FedAuth and rtFa cookies for SharePoint REST calls |
+| `SP_TOKEN` | Optional SharePoint bearer token captured from the browser session |
 
-All other scripts (`sp-get.js`, `sp-post.js`) read this file automatically.
+The auth file is an implementation detail consumed by `sp-api` and its internal helpers. Agents should not read or write it directly.
 
-### Verify
+## Verify
 
-Run a quick test call to confirm everything is working:
-
+```bash
+sp-api auth status
+sp-api lists list
 ```
-node scripts/sp-get.js "/_api/web?$select=Title"
+
+You should receive JSON envelopes on stdout. For command details, run:
+
+```bash
+sp-api lists --help
+sp-api schema lists list
 ```
-
-You should see a JSON response containing your site's title.
-
----
 
 ## Login / Logout
 
-### Force Re-Login
+Force visible re-login:
 
-If your session expires or you need to switch accounts:
-
-```
-node scripts/sp-auth.js contoso.sharepoint.com/sites/mysite --login
+```bash
+sp-api auth login --site contoso.sharepoint.com/sites/mysite --force
 ```
 
-### Clear Saved Profile
+Clear the saved profile and auth file:
 
-To delete the cached browser profile entirely:
-
-```
-node scripts/sp-auth.js contoso.sharepoint.com/sites/mysite --logout
+```bash
+sp-api auth logout
 ```
 
-The profile is stored at `~/.sharepoint-api-skill/browser-profile/`. The `--logout` flag deletes this directory.
-
----
+The browser profile is stored at `~/.sp-api/browser-profile/`.
 
 ## Troubleshooting
 
-### "Edge not found" or "Executable doesn't exist"
+### Edge not found
 
-Playwright requires Microsoft Edge to be installed. Install Edge from [microsoft.com/edge](https://www.microsoft.com/edge).
+Playwright requires Microsoft Edge. Install Edge from [microsoft.com/edge](https://www.microsoft.com/edge).
 
-### "Login loop" — keeps redirecting to login
+### Login loop
 
 Your saved session may have expired. Force a fresh login:
 
-```
-node scripts/sp-auth.js contoso.sharepoint.com/sites/mysite --login
-```
-
-### "No cookies found for tenant"
-
-1. Make sure the site URL is correct (e.g., `contoso.sharepoint.com/sites/mysite`, not just `contoso.com`).
-2. Try `--login` to force an interactive login.
-3. If using a dogfood tenant, use the full hostname (e.g., `contoso.sharepoint-df.com`).
-
-### "HTTP 401" on API calls
-
-Cookies expired — SharePoint cookies typically last 8–24 hours. Re-run the auth script to get fresh cookies.
-
-### "HTTP 403" on API calls
-
-You do not have permission to the requested resource. Check with your SharePoint administrator to confirm your access level.
-
-### Clear profile and start fresh
-
-```
-node scripts/sp-auth.js contoso.sharepoint.com/sites/mysite --logout
-node scripts/sp-auth.js contoso.sharepoint.com/sites/mysite --login
+```bash
+sp-api auth login --site contoso.sharepoint.com/sites/mysite --force
 ```
 
-### Cookie Expiration
+### No cookies found for tenant
 
-SharePoint session cookies typically last **8–24 hours**. When you start seeing `401 Unauthorized` responses, simply re-run the auth script to get fresh cookies. The persistent browser profile means this is instant — no manual login required unless the profile itself expires (typically weeks/months).
+1. Verify the site URL includes the SharePoint host and path.
+2. Use `--force` for interactive login.
+3. For dogfood tenants, use the full hostname such as `contoso.sharepoint-df.com`.
+
+### HTTP 401
+
+Cookies expired. Re-run `sp-api auth login --site <site>`.
+
+### HTTP 403
+
+Your browser account does not have permission to the requested SharePoint resource.

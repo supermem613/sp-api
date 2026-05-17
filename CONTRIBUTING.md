@@ -1,131 +1,135 @@
 # Contributing
 
-Guide for engineers working on the SharePoint API Skill.
+Guide for engineers working on the `sp-api` CLI and its bundled skill router.
 
 ---
 
 ## Quick Start
 
 ```bash
-git clone https://github.com/supermem613/sharepoint-api-skill
-cd sharepoint-api-skill
+git clone https://github.com/supermem613/sp-api
+cd sp-api
 npm install
+npm run build
+npm link
+npm test
 ```
 
-**Prerequisites:** Node.js 18+, Microsoft Edge (for Playwright auth).
+**Prerequisites:** Node.js 24+, Microsoft Edge for Playwright auth.
 
 ## Project Structure
 
-```
-.claude/skills/sharepoint-api/
-  SKILL.md              # Agent-facing skill definition (~2K tokens)
-  scripts/
-    sp-auth.js          # Playwright persistent-context auth
-    sp-env.js           # Shared auth loader (reads auth.json or env vars)
-    sp-fetch.js         # Shared fetch with retry and diagnostic errors
-    sp-get.js           # SharePoint REST GET
-    sp-post.js          # SharePoint REST POST/PATCH/DELETE
-  references/           # Domain-specific API docs (lazy-loaded by agent)
-docs/                   # Human-facing documentation
+```text
+bin/
+  sp-api.js                 # Package bin entrypoint
+src/
+  registry.js               # Single source of truth for capabilities, schema, help
+  renderers.js              # Generated help, schema, and SKILL router renderers
+  sp-api-core.js            # Agentic CLI dispatcher and JSON envelopes
+  sharepoint-auth.js        # Playwright persistent-context auth
+  sharepoint-fetch.js       # Shared fetch with retry and diagnostics
+  sharepoint-rest.js        # SharePoint REST execution and request digest handling
+.claude/skills/sp-api/
+  SKILL.md                  # Lean agent router generated from registry
+  references/               # Lazy-loaded REST background references
+docs/
+  AGENTIC_CONTRACT.md       # sp-api command and output contract
+  architecture.md
+  setup-guide.md
+  api-coverage.md
+  auth-deep-dive.md
 evals/
-  run-evals.md          # 42 evals — agent-executable spec
+  run-evals.md
 tests/
-  test-scripts.js       # Static validation (no network)
-  test-integration.js   # Live API tests (requires auth)
+  test-scripts.js           # Built-in auth, REST, and fetch module tests
+  test-sp-api.js            # sp-api registry/schema/help/envelope tests
+  test-integration.js       # Live SharePoint tests
 ```
 
 ## Architecture
 
-This is a **skill**, not an MCP server. The agent reads `SKILL.md`, learns the API patterns, and calls `sp-get.js`/`sp-post.js` directly. No runtime server, no tool registration.
+This is a **CLI with a bundled skill**. The `sp-api` CLI is the product surface and owns all SharePoint behavior. The bundled `SKILL.md` is a thin router that tells agents to call semantic `sp-api` commands instead of composing raw HTTP.
 
-**Auth flow:** Playwright launches Edge with a persistent browser profile (`~/.sharepoint-api-skill/browser-profile/`). On first run, the user logs in visually. After that, auth is headless and instant — cookies are extracted and saved to `~/.sharepoint-api-skill/auth.json`. No app registration, no client IDs, no secrets.
+The registry in `src/registry.js` is the source of truth for:
 
-**Token budget:** `SKILL.md` is kept small (~2K tokens). The 8 reference files in `references/` are loaded on demand by the agent only when needed, keeping the base cost low.
+- command groups and verbs
+- parameters and examples
+- endpoint/method metadata
+- `sp-api schema`
+- generated `--help`
+- generated `SKILL.md` router
+- test expectations
 
-See [`docs/architecture.md`](docs/architecture.md) for diagrams and design decisions.
+Implementation logic belongs under `src/`. The skill directory should stay a lean router plus references.
 
 ## Development Workflow
 
 ### Running Tests
 
 ```bash
-npm test                    # Static validation — no network, no auth
-npm run test:integration    # Live API tests — requires auth to a real site
+npm run build
+npm test
+npm run test:integration
 ```
 
-Static tests (`test-scripts.js`) validate file existence, shebangs, error messages, module structure, and that scripts only require local modules (no npm deps in sp-get/sp-post/sp-fetch).
+`npm run build` validates that generated artifacts match the registry and that the `sp-api` bin is wired correctly. `npm run link:local` runs the build and then `npm link` for local CLI development.
 
-### Running Evals
+Use `sp-api update` from linked or git-clone installs to self-update. It runs `git pull --ff-only`, skips install and build when already current, and otherwise runs `npm install --no-audit --no-fund` plus `npm run build`.
 
-Evals test all 42 SharePoint operations against a live site. They are defined in `evals/run-evals.md` as an agent-executable spec — tell your AI agent:
+`npm test` must stay fast and offline. It validates the `sp-api` CLI contract and its built-in auth/REST modules.
 
+### Linting the Skill
+
+Run `lint-skill` after changing `SKILL.md` or reference files:
+
+```bash
+node C:\Users\marcusm\.copilot\skills\lint-skill\scripts\lint-skill.mjs --findings-only .claude\skills\sp-api
 ```
-Run evals/run-evals.md against contoso.sharepoint.com/sites/testsite
-```
 
-Results are written to `evals/results/report.md`.
-
-> **Warning:** Evals create and delete test data prefixed with `SHAREPOINT_API_SKILL_EVAL_`. Only run against dev/test sites.
+The linter should be clean before delivery. New errors or warnings must be fixed before shipping.
 
 ### Authenticating for Development
 
 ```bash
-node .claude/skills/sharepoint-api/scripts/sp-auth.js contoso.sharepoint.com/sites/mysite
+sp-api auth login --site contoso.sharepoint.com/sites/mysite
+sp-api auth status
 ```
 
-First run opens Edge for login. After that, re-running the command refreshes cookies headlessly in ~2 seconds. Cookies last 8-24 hours. Use `--login` to force interactive login, `--logout` to clear the profile.
+Use `--force` for interactive re-login and `sp-api auth logout` to clear the saved profile.
 
-For dogfood tenants, use the full hostname (e.g., `contoso.sharepoint-df.com`).
+## Modifying Capabilities
 
-## Modifying Scripts
+Add or change commands in `src/registry.js` first. The registry change should drive schema, help, docs, and tests.
 
-All scripts are in `.claude/skills/sharepoint-api/scripts/`. Rules:
+Rules:
 
-1. **No npm dependencies** in sp-get, sp-post, sp-fetch, sp-env. Only local `./` requires and Node built-ins. The test suite enforces this.
-2. **sp-fetch.js** is the shared fetch layer. All HTTP calls in sp-get and sp-post go through `spFetch()`, which handles retry on transient errors and produces diagnostic error messages. Don't bypass it.
-3. **sp-env.js** is the auth resolver. It checks env vars first (`SP_SITE`, `SP_COOKIES`, `SP_TOKEN`), then falls back to `~/.sharepoint-api-skill/auth.json`. Don't duplicate this logic.
-4. **Cross-platform.** No shell dependencies, no OS-specific paths in scripts. Node.js only.
-
-## Modifying SKILL.md
-
-`SKILL.md` is what the agent reads. It's the most sensitive file in the repo — small changes affect every agent interaction.
-
-- Keep it under ~2K tokens. Move detailed API docs to `references/`.
-- Use `$SD` (not `$SKILL_DIR`) in all command examples. The agent sets `SD` once per session pointing to the scripts directory.
-- Test changes by invoking the skill from Claude Code and observing agent behavior.
+1. **No raw passthrough.** Add semantic capability verbs instead of exposing arbitrary HTTP.
+2. **Generated help.** Do not hand-write command help separate from the registry.
+3. **Generated skill router.** `SKILL.md` must match `renderSkillRouter()`.
+4. **Auth isolation.** Only `auth` may load Playwright. REST capability commands must not import Playwright directly or transitively.
+5. **Agentic envelopes.** Non-help commands write one JSON object to stdout. Remediation goes to stderr.
 
 ## Modifying Reference Files
 
-The 8 files in `references/` are loaded on demand when the agent needs domain-specific knowledge.
+References provide SharePoint REST background for agents after they have selected a semantic `sp-api` capability. Prefer examples that start with `sp-api schema <capability> <verb>` or a semantic `sp-api` command.
 
-| File | Covers |
-|------|--------|
-| `list-operations.md` | List/item CRUD, CAML, views, fields |
-| `file-operations.md` | Upload, download, copy, move, versions, folders |
-| `search.md` | SP Search, KQL syntax |
-| `site-discovery.md` | Site properties, lists, fields, content types |
-| `page-operations.md` | Modern pages, news posts |
-| `user-permissions.md` | Users, permissions, role assignments |
-| `advanced-operations.md` | Recycle bin, navigation, features |
-| `api-patterns.md` | OData, $select/$filter, CAML, batch, pagination |
+When adding a new operation:
 
-When adding a new operation: add it to the appropriate reference file, add a row to `docs/api-coverage.md`, and if it's common enough, add it to the quick reference in `SKILL.md`.
+1. Add a semantic verb to `src/registry.js`.
+2. Add or update tests in `tests/test-sp-api.js`.
+3. Update `docs/api-coverage.md`.
+4. Update references only for background details the schema cannot express.
 
 ## Adding Evals
 
-Evals live in `evals/run-evals.md`. Each eval has:
+Evals should verify that agents choose `sp-api`, pass arguments that match `sp-api schema`, and interpret the JSON envelope.
 
-- A number and name
-- The exact command to run
-- A pass condition
-- Cleanup instructions (if the eval creates data)
-
-All test data must be prefixed with `SHAREPOINT_API_SKILL_EVAL_` so it's identifiable and cleanable.
+All live test data must be prefixed with `SP_API_EVAL_`.
 
 ## Code Style
 
-- `'use strict'` at the top of every script
-- Shebang line (`#!/usr/bin/env node`) on every script
-- Errors go to stderr, data goes to stdout
-- Silence means success — no verbose output by default
-- No comments explaining obvious code. Comment intent, not mechanics.
+- `'use strict'` at the top of CommonJS scripts
+- Shebang line on executable bins
+- JSON stdout for non-help commands
+- stderr for progress and remediation
+- Comments explain why, not mechanics

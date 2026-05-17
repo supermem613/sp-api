@@ -1,16 +1,17 @@
 # Authentication Deep Dive
 
-A technical deep-dive into how Playwright persistent context authentication works for SharePoint API access.
+A technical deep-dive into how `sp-api auth` uses Playwright persistent context authentication for SharePoint API access.
 
 ## How Playwright Persistent Context Auth Works
 
-1. Playwright launches a Chromium-based browser (Microsoft Edge) using `chromium.launchPersistentContext`
-2. The persistent context stores its profile at `~/.sharepoint-api-skill/browser-profile/`
-3. On first run, the browser opens visibly — user signs into SharePoint
-4. The browser profile saves all cookies, localStorage, and session state to disk
-5. On subsequent runs, the browser launches headlessly and loads the saved profile
-6. Cookies are extracted via `context.cookies()` — the `FedAuth` and `rtFa` cookies are selected
-7. These cookies are passed as `Cookie:` header in all SP REST calls
+1. `sp-api auth login` invokes the internal Playwright auth helper
+2. Playwright launches a Chromium-based browser (Microsoft Edge) using `chromium.launchPersistentContext`
+3. The persistent context stores its profile at `~/.sp-api/browser-profile/`
+4. On first run, the browser opens visibly and the user signs into SharePoint
+5. The browser profile saves cookies, localStorage, and session state to disk
+6. On subsequent runs, the browser launches headlessly and loads the saved profile
+7. Cookies are extracted via `context.cookies()` and saved in `~/.sp-api/auth.json`
+8. Semantic `sp-api` commands use the saved auth through internal REST helpers
 
 ### Why Persistent Context Matters
 
@@ -45,7 +46,7 @@ This means on a corp-joined Windows machine, the very first run may complete wit
 |--------|----------------------------|
 | Format | Opaque (FedAuth: base64 XML, rtFa: opaque) |
 | Lifetime | ~8–24 hours |
-| Refresh | Re-run auth script (instant — uses saved profile) |
+| Refresh | Re-run `sp-api auth login --site <site>` |
 | Scope | Full (same as browser session) |
 | Used for | SP REST API (`/_api/...`) |
 
@@ -54,7 +55,7 @@ This means on a corp-joined Windows machine, the very first run may complete wit
 The browser profile is stored at:
 
 ```
-~/.sharepoint-api-skill/browser-profile/
+~/.sp-api/browser-profile/
 ```
 
 This directory contains:
@@ -70,9 +71,9 @@ This directory contains:
 |-------|-------------|
 | First run | Profile created, Edge opens for login |
 | Subsequent runs | Profile reused, headless, cookies extracted instantly |
-| `--login` | Profile reused but Edge opens visibly for re-login |
-| `--logout` | Profile directory deleted entirely |
-| Cookies expire | Auth script detects login redirect, falls back to visible login |
+| `sp-api auth login --site <site> --force` | Profile reused but Edge opens visibly for re-login |
+| `sp-api auth logout` | Profile directory deleted entirely |
+| Cookies expire | Auth detects login redirect, falls back to visible login |
 
 ## Security Considerations
 
@@ -88,7 +89,7 @@ This directory contains:
 
 - Don't log or commit cookie values
 - Re-authenticate periodically (cookies expire)
-- Use `--logout` to clear the profile when switching accounts or machines
+- Use `sp-api auth logout` to clear the profile when switching accounts or machines
 - The profile directory is excluded from version control by default (it's in your home directory, not the repo)
 
 ### Comparison to Previous CDP Approach
@@ -98,6 +99,6 @@ This directory contains:
 | Setup | `npm install` (one-time) | Close all Edge windows, relaunch with debug flag |
 | Auth flow | Automatic (profile persists) | Manual (visit site in debug browser every time) |
 | Dependencies | Node.js + Playwright | Python 3 + websocket-client (or PowerShell WebSocket) |
-| Security | Profile stored at ~/.sharepoint-api-skill/ | Cookies only in env vars (lost on shell close) |
+| Security | Profile stored at ~/.sp-api/ | Cookies only in env vars (lost on shell close) |
 | Reliability | Very high (Playwright manages browser lifecycle) | Fragile (debug port conflicts, silent flag ignore) |
 | Login persistence | Yes (profile survives across sessions) | No (must re-login every time Edge restarts) |

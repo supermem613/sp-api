@@ -1,6 +1,6 @@
-# SharePoint API Skill
+# sp-api
 
-**AI-powered SharePoint for Claude Code, GitHub Copilot CLI, and other AI coding agents**
+**An agentic SharePoint CLI with a bundled thin skill for Claude Code, GitHub Copilot CLI, and other coding agents.**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
@@ -8,134 +8,102 @@
 
 ## What It Does
 
-This skill teaches AI coding agents to interact with any SharePoint Online site through the SharePoint REST APIs: 50+ operations, zero app registration, cross-platform.
+This repo is first and foremost the `sp-api` CLI. It includes a bundled skill only as a thin router so agents know when and how to call the CLI. Agents use semantic SharePoint capability commands instead of raw HTTP verbs. The CLI owns auth, command routing, generated help, generated schema, JSON envelopes, and the current lists/files implementation.
 
-## Capabilities
+`sp-api` is agentic by default:
 
-### Lists and List Items
-- *"Show me all lists on this site with their item counts"*
-- *"Get the first 20 items from the Tasks list, sorted by due date"*
-- *"Create a new item in the Issues list with Title 'Server outage' and Priority 'High'"*
-- *"Update item 42 in the Tasks list — set Status to 'Completed'"*
-- *"Delete all items in the TestData list where Status is 'Draft'"*
-- *"Run a CAML query on the Orders list to find items created this month"*
+- JSON stdout for non-help commands
+- Progress and remediation on stderr
+- `sp-api schema` as the machine-readable source of truth
+- Help generated from the same capability registry as schema
+- No raw HTTP passthrough
 
-### List Schema and Views
-- *"Add a Choice column called 'Region' to the Customers list with options North, South, East, West"*
-- *"Create a view called 'My Open Items' that filters to items assigned to the current user"*
-- *"Show me the schema for the Projects list — all columns with their types"*
-- *"Apply column formatting to highlight overdue items in red"*
+## Current Command Surface
 
-### Files and Folders
-- *"List all files in the Shared Documents library with name and size"*
-- *"Upload report.pdf to the Reports folder in the document library"*
-- *"Read the contents of config.json from Shared Documents"*
-- *"Create a folder called 'Q1 Reports' in the document library"*
-- *"Copy budget.xlsx to the Archive folder"*
-- *"Show me the version history for proposal.docx"*
-
-### Search
-- *"Search for all documents containing 'quarterly review'"*
-- *"Find Excel files modified in the last 7 days"*
-
-### Pages
-- *"List all site pages with their titles"*
-- *"Create a new page called 'Team Updates' and publish it"*
-- *"Update the title of the Welcome page"*
-
-### Users and Permissions
-- *"Who is the current user?"*
-- *"List all site users with their email addresses"*
-- *"Show me the role assignments for this site"*
-
-### Site Administration
-- *"Get the site title, URL, and description"*
-- *"List all active site features"*
-- *"Show the quick launch navigation"*
-- *"Get the recycle bin contents"*
-- *"List content types on the Documents library"*
-
-### Lists and Libraries Management
-- *"Create a new list called 'Project Tracker'"*
-- *"Delete the list named Episodes"*
-
-## Test Drive
-
-Clone the repo and take it for a spin:
-
-```bash
-git clone https://github.com/supermem613/sharepoint-api-skill
-cd sharepoint-api-skill && npm install
-copilot   # or: claude
+```text
+sp-api auth   login | logout | status
+sp-api lists  list | get | create | delete | items | add-item | update-item | delete-item
+sp-api files  list | get | download | upload | delete | move | copy
+sp-api schema [capability] [verb]
+sp-api doctor
+sp-api update
 ```
 
-Try: *"List all lists on contoso.sharepoint.com/sites/mysite"*
+Planned capability groups are exposed in `sp-api schema` so agents can see what is not implemented yet without falling back to raw HTTP.
 
-## Install
+## Quick Start
+
+```bash
+git clone https://github.com/supermem613/sp-api
+cd sp-api
+npm install
+npm run build
+npm link
+sp-api doctor
+```
+
+Authenticate once:
+
+```bash
+sp-api auth login --site contoso.sharepoint.com/sites/mysite
+```
+
+Then use semantic commands:
+
+```bash
+sp-api lists list
+sp-api lists items --title Tasks --select Title,Id,Status --top 25
+sp-api files list --folder "/sites/mysite/Shared Documents"
+sp-api schema lists add-item
+```
+
+## Bundled Skill
+
+The skill under `.claude/skills/sp-api` is not the product surface. It is a generated router plus lazy-loaded references. Install the CLI first, then install or copy the skill so agents route SharePoint tasks to `sp-api`.
 
 ### Claude Code
 
 ```claude
-/install supermem613/sharepoint-api-skill
+/install supermem613/sp-api
 ```
 
-### Copilot CLI / Other AI Coding Agents
+### Copilot CLI / Other Agents
 
-Copy the skill directory into your project and install Playwright:
-
-**macOS / Linux:**
-
-```bash
-git clone https://github.com/supermem613/sharepoint-api-skill /tmp/sharepoint-api-skill
-cp -r /tmp/sharepoint-api-skill/.claude/skills/sharepoint-api .claude/skills/
-npm install playwright
-```
-
-**Windows (PowerShell):**
-
-```powershell
-git clone https://github.com/supermem613/sharepoint-api-skill $env:TEMP\sharepoint-api-skill
-Copy-Item -Recurse $env:TEMP\sharepoint-api-skill\.claude\skills\sharepoint-api .claude\skills\
-npm install playwright
-```
-
-The skill is auto-discovered from `.claude/skills/`. Run `/skills list` in Copilot CLI to verify.
+Copy `.claude/skills/sp-api` into the agent's skill directory and install the package dependencies from this repo. The skill routes agents to `sp-api`.
 
 ## Auth
 
-The agent authenticates automatically when the skill is invoked. Playwright launches a persistent Edge browser context that inherits Windows SSO/WAM — first run opens Edge for login (one-time), then it's instant and headless. No client ID, no tenant config, no secrets.
+`sp-api auth login` uses Playwright with Microsoft Edge persistent context. First run may open Edge for interactive login. Subsequent runs use the saved browser profile headlessly.
 
-- Credentials persist in `~/.sharepoint-api-skill/auth.json` (works across shell sessions)
-- `--login` to force re-login, `--logout` to clear the profile
+- Browser profile: `~/.sp-api/browser-profile/`
+- Auth file: `~/.sp-api/auth.json`
+- Force re-login: `sp-api auth login --site <site> --force`
+- Clear auth: `sp-api auth logout`
 
-## Evals
-
-Thorough evals covering auth, discovery, list CRUD, files, search, users, pages, and advanced operations. Run them against any dev/test site:
-
-```claude
-Run evals/run-evals.md against contoso.sharepoint.com/sites/testsite
-```
-
-Results are written to `evals/results/report.md`. See [`evals/run-evals.md`](evals/run-evals.md) for the full eval list and scoring criteria.
-
-> **Warning:** Evals create and delete test data prefixed with `EVAL_TEST_`. Only run against dev/test sites.
+No app registration, client ID, tenant config, or secret is required.
 
 ## Tests
 
 ```bash
-npm test                    # Static tests (no network)
-npm run test:integration    # Live API tests (requires auth)
+npm run build
+npm test
+npm run test:integration
 ```
 
-## Prerequisites
+`npm run build` validates generated artifacts and the `sp-api` bin before local linking or publishing. `npm link` and `npm run link:local` are supported for local development. For linked or git-clone installs, `sp-api update` pulls with `git pull --ff-only`, skips install/build when already current, and otherwise runs `npm install --no-audit --no-fund` plus `npm run build`.
 
-- **Node.js 18+**
-- **Microsoft Edge** (Playwright uses your system Edge)
-- `npm install` (one-time, installs Playwright)
+`npm test` covers the `sp-api` registry, schema generation, help generation, JSON envelopes, SharePoint auth/REST internals, no raw fallback, auth isolation, package bin wiring, and SKILL router sync.
 
-## Contributing
+`npm run test:integration` is the live SharePoint test suite and requires an authenticated site.
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, project structure, and how to modify scripts, evals, and reference docs.
+## Docs
+
+- [`docs/AGENTIC_CONTRACT.md`](docs/AGENTIC_CONTRACT.md) — `sp-api` stdout/stderr, schema, help, and command contract
+- [`docs/setup-guide.md`](docs/setup-guide.md) — install and auth
+- [`docs/architecture.md`](docs/architecture.md) — registry, CLI, and auth architecture
+- [`docs/api-coverage.md`](docs/api-coverage.md) — current and planned capability coverage
+- [`docs/auth-deep-dive.md`](docs/auth-deep-dive.md) — Playwright persistent-context auth details
+- [`CONTRIBUTING.md`](CONTRIBUTING.md) — development workflow
 
 ## License
 

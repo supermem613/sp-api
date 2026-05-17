@@ -1,13 +1,19 @@
 {
-  "name": "sharepoint-api-skill",
-  "version": "1.0.0",
-  "description": "AI skill for SharePoint API automation — works with Claude Code, GitHub Copilot, and Codex",
+  "name": "sp-api",
+  "version": "1.1.0",
+  "description": "Agentic SharePoint CLI with a bundled thin skill for coding agents",
+  "bin": {
+    "sp-api": "bin/sp-api.js"
+  },
   "scripts": {
-    "test": "node --test tests/test-scripts.js",
+    "build": "node scripts/build.js",
+    "prepare": "npm run build",
+    "link:local": "npm run build && npm link",
+    "test": "node --test tests/test-scripts.js tests/test-sp-api.js",
     "test:integration": "node --test tests/test-integration.js",
-    "auth": "node .claude/skills/sharepoint-api/scripts/sp-auth.js",
-    "login": "node .claude/skills/sharepoint-api/scripts/sp-auth.js --login",
-    "logout": "node .claude/skills/sharepoint-api/scripts/sp-auth.js --logout"
+    "auth": "sp-api auth status",
+    "login": "sp-api auth login",
+    "logout": "sp-api auth logout"
   },
   "dependencies": {
     "playwright": "^1.50.0"
@@ -26,7 +32,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/supermem613/sharepoint-api-skill"
+    "url": "https://github.com/supermem613/sp-api"
   },
   "engines": {
     "node": ">=24.0.0"

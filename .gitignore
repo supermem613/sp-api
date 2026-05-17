@@ -5,7 +5,7 @@ dist/
 npm-debug.log*
 
 # Playwright browser profile (user-specific auth state)
-.sharepoint-api-skill/
+.sp-api/
 
 # OS files
 .DS_Store
