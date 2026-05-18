@@ -53,6 +53,8 @@ This repo is first and foremost the `sp-api` CLI. It includes a bundled skill on
 - *"Get metadata for `/sites/team/Shared Documents/report.docx`"*
 - *"Download the contents of `/sites/team/Shared Documents/config.json`"*
 - *"Upload a small text file called notes.txt to Shared Documents"*
+- *"Upload the contents of a local file as `SKILL.md`"*
+- *"Create, recycle, or delete a SharePoint folder by server-relative path"*
 - *"Recycle old.txt without permanently deleting it"*
 - *"Delete old.txt permanently"*
 - *"Move draft.docx to the Archive folder"*
@@ -91,7 +93,7 @@ This repo is first and foremost the `sp-api` CLI. It includes a bundled skill on
 ```text
 sp-api auth   login | logout | status
 sp-api lists  list | get | fields | create | delete | items | add-item | update-item | delete-item
-sp-api files  list | get | folder | download | upload | delete | recycle | move | copy
+sp-api files  list | get | download | upload | create-folder | delete-folder | recycle-folder | delete | move | copy | folder | recycle
 sp-api search query
 sp-api sites  get | discovery
 sp-api pages  list | get | checkout | save-fields | publish | discard-checkout
@@ -126,6 +128,7 @@ Then use semantic commands:
 sp-api lists list
 sp-api lists items --title Tasks --select Title,Id,Status --top 25
 sp-api files list --folder "/sites/mysite/Shared Documents"
+sp-api files create-folder --path "/sites/mysite/Shared Documents/Test Folder"
 sp-api schema lists add-item
 ```
 

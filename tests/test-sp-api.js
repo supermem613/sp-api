@@ -4,7 +4,8 @@
 const { describe, it } = require('node:test');
 const assert = require('node:assert');
 const { spawnSync } = require('node:child_process');
-const { existsSync, readFileSync } = require('node:fs');
+const { existsSync, readFileSync, writeFileSync, mkdtempSync, rmSync } = require('node:fs');
+const { tmpdir } = require('node:os');
 const { join } = require('node:path');
 const { capabilities } = require('../src/registry');
 const {
@@ -14,7 +15,7 @@ const {
   renderVerbHelp,
   renderSkillRouter,
 } = require('../src/renderers');
-const { buildSharePointRequest, gitPullMadeNoChanges, selfUpdate } = require('../src/sp-api-core');
+const { buildSharePointRequest, collectParams, gitPullMadeNoChanges, selfUpdate } = require('../src/sp-api-core');
 
 const repoRoot = join(__dirname, '..');
 const cliPath = join(repoRoot, 'bin', 'sp-api.js');
@@ -91,6 +92,9 @@ describe('registry invariants', () => {
     assert.ok(capabilities.lists.verbs.fields);
     assert.ok(capabilities.files.verbs.folder);
     assert.ok(capabilities.files.verbs.recycle);
+    assert.ok(capabilities.files.verbs['create-folder']);
+    assert.ok(capabilities.files.verbs['delete-folder']);
+    assert.ok(capabilities.files.verbs['recycle-folder']);
   });
 
   it('keeps shipped verbs out of the planned capability lists', () => {
@@ -285,6 +289,21 @@ describe('SharePoint request construction', () => {
       buildSharePointRequest(capabilities.files.verbs.recycle, { path: '/sites/team/Shared Documents/old.txt' }).endpoint,
       "_api/web/getfilebyserverrelativeurl('/sites/team/Shared Documents/old.txt')/recycle",
     );
+    assert.deepStrictEqual(
+      buildSharePointRequest(capabilities.files.verbs['create-folder'], { path: "/sites/team/Shared Documents/Agent's Skills" }),
+      {
+        endpoint: '_api/web/folders',
+        body: '{"__metadata":{"type":"SP.Folder"},"ServerRelativeUrl":"/sites/team/Shared Documents/Agent\'s Skills"}',
+      },
+    );
+    assert.strictEqual(
+      buildSharePointRequest(capabilities.files.verbs['delete-folder'], { path: "/sites/team/Shared Documents/Agent's Skills", 'missing-ok': false }).endpoint,
+      "_api/web/getfolderbyserverrelativeurl('/sites/team/Shared Documents/Agent''s Skills')",
+    );
+    assert.strictEqual(
+      buildSharePointRequest(capabilities.files.verbs['recycle-folder'], { path: '/sites/team/Shared Documents/Old Folder' }).endpoint,
+      "_api/web/getfolderbyserverrelativeurl('/sites/team/Shared Documents/Old Folder')/recycle",
+    );
     assert.strictEqual(
       buildSharePointRequest(capabilities.permissions.verbs.get, {}).endpoint,
       '_api/web/roleassignments?$expand=Member%2CRoleDefinitionBindings',
@@ -292,6 +311,42 @@ describe('SharePoint request construction', () => {
     assert.strictEqual(
       buildSharePointRequest(capabilities.sites.verbs.discovery, {}).endpoint,
       '_api/web/lists?$filter=Hidden eq false&$select=Id%2CTitle%2CBaseTemplate%2CBaseType%2CItemCount%2CRootFolder%2FServerRelativeUrl&$expand=RootFolder',
+    );
+  });
+
+  it('builds upload bodies from inline content or content files', () => {
+    const tmp = mkdtempSync(join(tmpdir(), 'sp-api-upload-'));
+    try {
+      const bodyPath = join(tmp, 'SKILL.md');
+      writeFileSync(bodyPath, 'hello from file', 'utf8');
+      assert.strictEqual(
+        buildSharePointRequest(capabilities.files.verbs.upload, {
+          folder: '/sites/team/Shared Documents',
+          name: 'notes.txt',
+          content: 'hello inline',
+          overwrite: true,
+        }).body,
+        'hello inline',
+      );
+      const values = collectParams(capabilities.files.verbs.upload, {
+        folder: '/sites/team/Shared Documents',
+        name: 'SKILL.md',
+        'content-file': bodyPath,
+      });
+      assert.strictEqual(values.content, 'hello from file');
+      assert.strictEqual(buildSharePointRequest(capabilities.files.verbs.upload, values).body, 'hello from file');
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  it('requires upload content or content-file', () => {
+    assert.throws(
+      () => collectParams(capabilities.files.verbs.upload, {
+        folder: '/sites/team/Shared Documents',
+        name: 'SKILL.md',
+      }),
+      /--content or --content-file/,
     );
   });
 });

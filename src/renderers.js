@@ -121,7 +121,7 @@ This bundled skill is a thin router for the \`sp-api\` CLI. Use the CLI for Shar
 
 1. Run \`sp-api doctor\` if setup or auth is uncertain.
 2. Use \`sp-api schema\` to inspect the full machine-readable contract, or \`sp-api schema <capability> <verb>\` for one command.
-3. Run semantic commands such as \`sp-api lists items --title Tasks --top 25\` or \`sp-api files list --folder "/sites/team/Shared Documents"\`.
+3. Run semantic commands such as \`sp-api lists items --title Tasks --top 25\`, \`sp-api files list --folder "/sites/team/Shared Documents"\`, or \`sp-api files create-folder --path "/sites/team/Shared Documents/New Folder"\`.
 4. If a capability is not listed in \`schema\`, do not fall back to raw HTTP. Report the missing capability so a verb can be added.
 
 ## Capabilities

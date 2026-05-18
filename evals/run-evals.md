@@ -111,7 +111,7 @@ Pass conditions should inspect `ok`, `command`, and `data`.
 
 **Run:** `sp-api schema files upload`
 
-**Pass if:** `ok` is `true`, `data.id` is `files.upload`, and params include `folder`, `name`, and `content`.
+**Pass if:** `ok` is `true`, `data.id` is `files.upload`, and params include `folder`, `name`, `content`, and `content-file`.
 
 ### 12 — List files
 
@@ -137,7 +137,25 @@ Pass conditions should inspect `ok`, `command`, and `data`.
 
 **Pass if:** `ok` is `true`.
 
-### 16 — Delete eval list
+### 16 — Create folder
+
+**Run:** `sp-api files create-folder --path "<DOCLIB_PATH>/SP_API_EVAL_Folder"`
+
+**Pass if:** `ok` is `true`.
+
+### 17 — Recycle folder
+
+**Run:** `sp-api files recycle-folder --path "<DOCLIB_PATH>/SP_API_EVAL_Folder" --missing-ok true`
+
+**Pass if:** `ok` is `true`.
+
+### 18 — Delete folder with missing-ok
+
+**Run:** `sp-api files delete-folder --path "<DOCLIB_PATH>/SP_API_EVAL_Folder" --missing-ok true`
+
+**Pass if:** `ok` is `true` even if the previous recycle removed the folder.
+
+### 19 — Delete eval list
 
 **Run:** `sp-api lists delete --title SP_API_EVAL_List`
 

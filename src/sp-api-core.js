@@ -48,6 +48,9 @@ function parseArgs(args) {
 function coerceValue(param, value) {
   if (value === undefined && Object.hasOwn(param, 'default')) return param.default;
   if (value === undefined) return undefined;
+  if (param.type === 'file-text') {
+    return fs.readFileSync(String(value), 'utf8');
+  }
   if (param.type === 'number') {
     const numberValue = Number(value);
     if (!Number.isFinite(numberValue)) throw new Error(`--${param.name} must be a number`);
@@ -76,7 +79,12 @@ function collectParams(spec, flags) {
     if (value === undefined && param.required) {
       throw new Error(`Missing required option --${param.name}`);
     }
-    if (value !== undefined) values[param.name] = value;
+    if (value !== undefined) values[param.mapsTo || param.name] = value;
+  }
+  for (const group of spec.requiresOneOf || []) {
+    if (!group.some(name => flags[name] !== undefined)) {
+      throw new Error(`Missing one of required options: ${group.map(name => `--${name}`).join(' or ')}`);
+    }
   }
   return values;
 }
@@ -107,6 +115,7 @@ function addQuery(endpoint, query, values) {
 
 function buildBody(spec, values) {
   if (Object.hasOwn(values, 'body')) return JSON.stringify(values.body);
+  if (spec.bodyParam) return String(values[spec.bodyParam] || '');
   if (!spec.bodyTemplate) return '';
   function visit(value) {
     if (typeof value === 'string') {
@@ -127,7 +136,18 @@ function buildBody(spec, values) {
 
 async function runSharePoint(spec, values) {
   const { endpoint, body } = buildSharePointRequest(spec, values);
-  return executeSharePointRequest(spec, endpoint, body);
+  try {
+    return await executeSharePointRequest(spec, endpoint, body);
+  } catch (err) {
+    if (spec.notFoundOkParam && values[spec.notFoundOkParam] === true && /HTTP 404\b/.test(err.message)) {
+      return {
+        data: { missing: true },
+        endpoint,
+        method: spec.method || 'GET',
+      };
+    }
+    throw err;
+  }
 }
 
 function buildSharePointRequest(spec, values) {

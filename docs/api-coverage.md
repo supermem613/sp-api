@@ -10,7 +10,7 @@
 |-------|-------|-------|
 | `auth` | `login`, `logout`, `status` | Playwright Edge persistent-context auth |
 | `lists` | `list`, `get`, `fields`, `create`, `delete`, `items`, `add-item`, `update-item`, `delete-item` | List discovery, field schema, and core item CRUD |
-| `files` | `list`, `get`, `folder`, `download`, `upload`, `delete`, `recycle`, `move`, `copy` | Folder/file operations for small text uploads, folder expansion, recycle, and common file movement |
+| `files` | `list`, `get`, `folder`, `download`, `upload`, `delete`, `recycle`, `move`, `copy`, `create-folder`, `delete-folder`, `recycle-folder` | Folder/file operations for small text uploads, folder expansion, recycle, folder CRUD, and common file movement |
 | `search` | `query` | Site-scoped SharePoint search with explicit query text and result shaping |
 | `sites` | `get`, `discovery` | Site metadata and visible list/library discovery |
 | `pages` | `list`, `get`, `checkout`, `save-fields`, `publish`, `discard-checkout` | Modern Site Pages read and lifecycle operations |
