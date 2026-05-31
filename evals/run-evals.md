@@ -131,31 +131,39 @@ Pass conditions should inspect `ok`, `command`, and `data`.
 
 **Pass if:** `ok` is `true` and `data` contains `Hello from eval`.
 
-### 15 — Delete file
+### 15 — Download file to local path
+
+**Run:** `sp-api files download --path "<DOCLIB_PATH>/SP_API_EVAL.txt" --out SP_API_EVAL_DOWNLOAD.txt`
+
+**Pass if:** `ok` is `true`, `data.path` ends with `SP_API_EVAL_DOWNLOAD.txt`, and `data.bytes` is greater than `0`.
+
+**Cleanup:** remove `SP_API_EVAL_DOWNLOAD.txt` after this check to keep the local working tree clean.
+
+### 16 — Delete file
 
 **Run:** `sp-api files delete --path "<DOCLIB_PATH>/SP_API_EVAL.txt"`
 
 **Pass if:** `ok` is `true`.
 
-### 16 — Create folder
+### 17 — Create folder
 
 **Run:** `sp-api files create-folder --path "<DOCLIB_PATH>/SP_API_EVAL_Folder"`
 
 **Pass if:** `ok` is `true`.
 
-### 17 — Recycle folder
+### 18 — Recycle folder
 
 **Run:** `sp-api files recycle-folder --path "<DOCLIB_PATH>/SP_API_EVAL_Folder" --missing-ok true`
 
 **Pass if:** `ok` is `true`.
 
-### 18 — Delete folder with missing-ok
+### 19 — Delete folder with missing-ok
 
 **Run:** `sp-api files delete-folder --path "<DOCLIB_PATH>/SP_API_EVAL_Folder" --missing-ok true`
 
 **Pass if:** `ok` is `true` even if the previous recycle removed the folder.
 
-### 19 — Delete eval list
+### 20 — Delete eval list
 
 **Run:** `sp-api lists delete --title SP_API_EVAL_List`
 
@@ -169,7 +177,7 @@ Write `evals/results/report.md`:
 # Eval Report — [date]
 
 **Site:** [site URL]
-**Overall:** [passed]/16 ([percentage]%)
+**Overall:** [passed]/20 ([percentage]%)
 
 | Eval | Result | Notes |
 |------|--------|-------|

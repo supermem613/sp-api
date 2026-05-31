@@ -15,7 +15,7 @@ const {
   renderVerbHelp,
   renderSkillRouter,
 } = require('../src/renderers');
-const { buildSharePointRequest, collectParams, gitPullMadeNoChanges, selfUpdate } = require('../src/sp-api-core');
+const { buildSharePointRequest, collectParams, gitPullMadeNoChanges, selfUpdate, writeDownloadToOut } = require('../src/sp-api-core');
 
 const repoRoot = join(__dirname, '..');
 const cliPath = join(repoRoot, 'bin', 'sp-api.js');
@@ -348,6 +348,28 @@ describe('SharePoint request construction', () => {
       }),
       /--content or --content-file/,
     );
+  });
+
+  it('supports files.download --out and writes binary-safe bytes', () => {
+    const values = collectParams(capabilities.files.verbs.download, {
+      path: '/sites/team/Shared Documents/image.png',
+      out: 'downloads/image.png',
+    });
+    assert.strictEqual(values.path, '/sites/team/Shared Documents/image.png');
+    assert.strictEqual(values.out, 'downloads/image.png');
+
+    const tmp = mkdtempSync(join(tmpdir(), 'sp-api-download-'));
+    const originalCwd = process.cwd();
+    try {
+      process.chdir(tmp);
+      const metadata = writeDownloadToOut(values, { bodyBuffer: Buffer.from([0, 255, 127, 65]) });
+      assert.ok(existsSync(metadata.path));
+      assert.strictEqual(metadata.bytes, 4);
+      assert.deepStrictEqual([...readFileSync(metadata.path)], [0, 255, 127, 65]);
+    } finally {
+      process.chdir(originalCwd);
+      rmSync(tmp, { recursive: true, force: true });
+    }
   });
 });
 

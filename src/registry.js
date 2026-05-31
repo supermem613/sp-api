@@ -228,9 +228,13 @@ const capabilities = {
         handler: 'sharepoint-rest',
         params: [
           { name: 'path', type: 'string', required: true, doc: 'Server-relative file path' },
+          { name: 'out', type: 'string', required: false, doc: 'Local output path for binary-safe file writing' },
         ],
-        output: { envelope: envelopeSchema, data: 'File content as returned by SharePoint' },
-        examples: ['sp-api files download --path "/sites/team/Shared Documents/doc.txt"'],
+        output: { envelope: envelopeSchema, data: 'File content string, or write metadata when --out is provided' },
+        examples: [
+          'sp-api files download --path "/sites/team/Shared Documents/doc.txt"',
+          'sp-api files download --path "/sites/team/Shared Documents/image.png" --out image.png',
+        ],
       },
       upload: {
         id: 'files.upload',

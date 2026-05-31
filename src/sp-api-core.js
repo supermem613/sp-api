@@ -271,6 +271,17 @@ function fail(stdout, code, command, message, details) {
   writeJson(stdout, envelope(false, command, null, { code, message, details }));
 }
 
+function writeDownloadToOut(values, execution) {
+  const outPath = path.resolve(String(values.out));
+  fs.mkdirSync(path.dirname(outPath), { recursive: true });
+  const bodyBuffer = execution.bodyBuffer || Buffer.from(typeof execution.data === 'string' ? execution.data : '', 'utf8');
+  fs.writeFileSync(outPath, bodyBuffer);
+  return {
+    path: outPath,
+    bytes: bodyBuffer.length,
+  };
+}
+
 async function main(args, io) {
   const { stdout, stderr, exit } = io;
   const parsed = parseArgs(args);
@@ -377,7 +388,17 @@ async function main(args, io) {
     exit(1);
     return;
   }
-  writeJson(stdout, envelope(true, spec.id, execution.data, null, { endpoint: execution.endpoint, method: execution.method }));
+  let data = execution.data;
+  if (spec.id === 'files.download' && values.out) {
+    try {
+      data = writeDownloadToOut(values, execution);
+    } catch (err) {
+      fail(stdout, 'WRITE_FAILED', spec.id, `Could not write --out file: ${err.message}`);
+      exit(1);
+      return;
+    }
+  }
+  writeJson(stdout, envelope(true, spec.id, data, null, { endpoint: execution.endpoint, method: execution.method }));
   exit(0);
 }
 
@@ -394,4 +415,5 @@ module.exports = {
   buildSharePointRequest,
   runSharePoint,
   selfUpdate,
+  writeDownloadToOut,
 };

@@ -81,11 +81,19 @@ async function executeSharePointRequest(spec, endpoint, body, deps = {}) {
   }
 
   const res = await spFetch(url, fetchOptions, deps);
-  const text = await res.text();
+  const bodyBuffer = typeof res.arrayBuffer === 'function'
+    ? Buffer.from(await res.arrayBuffer())
+    : Buffer.from(await res.text(), 'utf8');
+  const text = bodyBuffer.toString('utf8');
   if (!res.ok) {
     throw new Error(`HTTP ${res.status} on ${method} ${url}: ${text}`);
   }
-  return { data: parseResponseBody(text), endpoint: normalizeEndpoint(endpoint), method };
+  return {
+    data: parseResponseBody(text),
+    endpoint: normalizeEndpoint(endpoint),
+    method,
+    bodyBuffer,
+  };
 }
 
 module.exports = {
