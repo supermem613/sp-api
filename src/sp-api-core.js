@@ -172,12 +172,31 @@ function gitPullMadeNoChanges(output) {
 }
 
 function runCommand(command, args, cwd) {
-  return spawnSync(command, args, {
+  // On Windows, resolve git/.cmd shims explicitly instead of using shell: true,
+  // which would subject args to cmd.exe quoting rules (latent command injection).
+  const resolved = process.platform === 'win32' && !/\.(exe|cmd|bat)$/i.test(command)
+    ? resolveWindowsCommand(command)
+    : command;
+  return spawnSync(resolved, args, {
     cwd,
     encoding: 'utf8',
     stdio: ['ignore', 'pipe', 'pipe'],
-    shell: process.platform === 'win32',
   });
+}
+
+function resolveWindowsCommand(command) {
+  const pathExt = (process.env.PATHEXT || '.EXE;.CMD;.BAT;.COM').split(';');
+  const dirs = (process.env.PATH || '').split(path.delimiter);
+  for (const dir of dirs) {
+    if (!dir) continue;
+    for (const ext of pathExt) {
+      const candidate = path.join(dir, command + ext);
+      try {
+        if (fs.statSync(candidate).isFile()) return candidate;
+      } catch {}
+    }
+  }
+  return command;
 }
 
 function isGitRepo(cwd) {
