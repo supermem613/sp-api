@@ -15,6 +15,7 @@ sp-api files --help
 | Expand child folders and files | `sp-api files folder --folder "/sites/team/Shared Documents"` |
 | Get file metadata | `sp-api files get --path "/sites/team/Shared Documents/doc.txt"` |
 | Download file content | `sp-api files download --path "/sites/team/Shared Documents/doc.txt"` |
+| Download directly to a local file (binary-safe) | `sp-api files download --path "/sites/team/Shared Documents/image.png" --out image.png` |
 | Upload small text content | `sp-api files upload --folder "/sites/team/Shared Documents" --name notes.txt --content "hello"` |
 | Upload UTF-8 text from a local file | `sp-api files upload --folder "/sites/team/Shared Documents" --name SKILL.md --content-file SKILL.md` |
 | Create folder | `sp-api files create-folder --path "/sites/team/Shared Documents/New Folder"` |
@@ -38,6 +39,8 @@ sp-api schema files move
 ```
 
 The schema describes required params, overwrite flags, `--content-file`, `--missing-ok`, underlying REST metadata, auth requirements, and response envelope shape.
+
+For `files download`, use `--out <local-path>` to write the raw response bytes to disk instead of returning the content string in `data`.
 
 ## Paths
 

@@ -52,6 +52,7 @@ This repo is first and foremost the `sp-api` CLI. It includes a bundled skill on
 - *"Show folders and files under `/sites/team/Shared Documents`"*
 - *"Get metadata for `/sites/team/Shared Documents/report.docx`"*
 - *"Download the contents of `/sites/team/Shared Documents/config.json`"*
+- *"Download `/sites/team/Shared Documents/logo.png` to a local file with `--out`"*
 - *"Upload a small text file called notes.txt to Shared Documents"*
 - *"Upload the contents of a local file as `SKILL.md`"*
 - *"Create, recycle, or delete a SharePoint folder by server-relative path"*

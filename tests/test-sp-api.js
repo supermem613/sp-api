@@ -15,7 +15,7 @@ const {
   renderVerbHelp,
   renderSkillRouter,
 } = require('../src/renderers');
-const { buildSharePointRequest, collectParams, gitPullMadeNoChanges, selfUpdate } = require('../src/sp-api-core');
+const { buildSharePointRequest, collectParams, gitPullMadeNoChanges, runCommand, selfUpdate, writeDownloadToOut } = require('../src/sp-api-core');
 
 const repoRoot = join(__dirname, '..');
 const cliPath = join(repoRoot, 'bin', 'sp-api.js');
@@ -205,6 +205,17 @@ describe('JSON envelope behavior', () => {
     assert.match(json.error.message, /--title/);
   });
 
+  it('rejects valueless string options before running SharePoint requests', () => {
+    const r = runCli(['files', 'download', '--path', '/sites/team/Shared Documents/file.txt', '--out']);
+    assert.strictEqual(r.status, 2);
+    assert.strictEqual(r.stderr, '');
+    const json = parseJson(r.stdout);
+    assert.strictEqual(json.ok, false);
+    assert.strictEqual(json.command, 'files.download');
+    assert.strictEqual(json.error.code, 'VALIDATION_FAILED');
+    assert.match(json.error.message, /--out requires a value/);
+  });
+
   it('rejects unknown capabilities and verbs without raw fallback', () => {
     const cap = parseJson(runCli(['request', '--method', 'GET']).stdout);
     assert.strictEqual(cap.ok, false);
@@ -349,6 +360,28 @@ describe('SharePoint request construction', () => {
       /--content or --content-file/,
     );
   });
+
+  it('supports files.download --out and writes binary-safe bytes', () => {
+    const values = collectParams(capabilities.files.verbs.download, {
+      path: '/sites/team/Shared Documents/image.png',
+      out: 'downloads/image.png',
+    });
+    assert.strictEqual(values.path, '/sites/team/Shared Documents/image.png');
+    assert.strictEqual(values.out, 'downloads/image.png');
+
+    const tmp = mkdtempSync(join(tmpdir(), 'sp-api-download-'));
+    const originalCwd = process.cwd();
+    try {
+      process.chdir(tmp);
+      const metadata = writeDownloadToOut(values, { bodyBuffer: Buffer.from([0, 255, 127, 65]) });
+      assert.ok(existsSync(metadata.path));
+      assert.strictEqual(metadata.bytes, 4);
+      assert.deepStrictEqual([...readFileSync(metadata.path)], [0, 255, 127, 65]);
+    } finally {
+      process.chdir(originalCwd);
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
 });
 
 describe('SKILL.md router generation', () => {
@@ -416,6 +449,38 @@ describe('update command', () => {
       'npm install --no-audit --no-fund',
       'npm run build',
     ]);
+  });
+
+  it('executes npm via node + npm-cli.js on Windows', () => {
+    const tmp = mkdtempSync(join(tmpdir(), 'sp-api-npm-cli-'));
+    const fakeNpmCli = join(tmp, 'npm-cli.js');
+    writeFileSync(
+      fakeNpmCli,
+      [
+        "'use strict';",
+        'process.stdout.write(JSON.stringify({',
+        '  argv0: process.argv[0],',
+        '  args: process.argv.slice(2),',
+        '}));',
+      ].join('\n'),
+      'utf8',
+    );
+
+    const platformDescriptor = Object.getOwnPropertyDescriptor(process, 'platform');
+
+    try {
+      Object.defineProperty(process, 'platform', { value: 'win32' });
+      const result = runCommand('npm', ['run', 'build'], repoRoot, {
+        resolveNpmCliPath: () => fakeNpmCli,
+      });
+      assert.strictEqual(result.status, 0);
+      const payload = JSON.parse(result.stdout);
+      assert.strictEqual(payload.argv0, process.execPath);
+      assert.deepStrictEqual(payload.args, ['run', 'build']);
+    } finally {
+      Object.defineProperty(process, 'platform', platformDescriptor);
+      rmSync(tmp, { recursive: true, force: true });
+    }
   });
 });
 

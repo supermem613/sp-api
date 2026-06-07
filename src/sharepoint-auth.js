@@ -11,7 +11,13 @@ const LOGIN_TIMEOUT_MS = 300_000;
 const HEADLESS_PROBE_MS = 5_000;
 
 function ensureDir(dir) {
-  fs.mkdirSync(dir, { recursive: true });
+  fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+  setPrivateMode(dir, 0o700);
+}
+
+function setPrivateMode(target, mode) {
+  if (process.platform === 'win32') return;
+  fs.chmodSync(target, mode);
 }
 
 function readAuthFile(authFile = AUTH_FILE) {
@@ -177,7 +183,8 @@ async function authenticate(site, options = {}) {
     ...(spToken && { SP_TOKEN: spToken }),
   };
   ensureDir(path.dirname(authFile));
-  fs.writeFileSync(authFile, JSON.stringify(authData, null, 2) + '\n');
+  fs.writeFileSync(authFile, JSON.stringify(authData, null, 2) + '\n', { mode: 0o600 });
+  setPrivateMode(authFile, 0o600);
   log(`wrote ${authFile} (token=${!!spToken})`);
   return { cookieStr, siteUrl, spToken };
 }

@@ -4,7 +4,8 @@
 const { describe, it, before } = require('node:test');
 const assert = require('node:assert');
 const { execFileSync } = require('node:child_process');
-const { readFileSync } = require('node:fs');
+const { existsSync, mkdtempSync, readFileSync, rmSync } = require('node:fs');
+const { tmpdir } = require('node:os');
 const { join } = require('node:path');
 const { AUTH_FILE } = require('../src/sharepoint-auth');
 
@@ -62,5 +63,42 @@ describe('sp-api live SharePoint integration', () => {
     const lists = runSpApi(['lists', 'list']);
     assert.strictEqual(lists.ok, true);
     assert.ok(lists.data);
+  });
+
+  it('downloads a file to --out and preserves local bytes', t => {
+    const discovery = runSpApi(['sites', 'discovery']);
+    assert.strictEqual(discovery.ok, true);
+    const libraries = (discovery.data?.value || []).filter(item => item?.BaseType === 1 && item?.RootFolder?.ServerRelativeUrl);
+    if (!libraries.length) {
+      t.skip('No visible document library found for files integration test');
+      return;
+    }
+
+    const folder = libraries[0].RootFolder.ServerRelativeUrl;
+    const suffix = Date.now();
+    const name = `SP_API_INTEGRATION_DOWNLOAD_${suffix}.txt`;
+    const serverPath = `${folder}/${name}`;
+    const content = `integration-download-${suffix}`;
+    const tmp = mkdtempSync(join(tmpdir(), 'sp-api-download-'));
+    const outPath = join(tmp, 'downloaded.txt');
+
+    try {
+      const upload = runSpApi(['files', 'upload', '--folder', folder, '--name', name, '--content', content]);
+      assert.strictEqual(upload.ok, true);
+
+      const download = runSpApi(['files', 'download', '--path', serverPath, '--out', outPath]);
+      assert.strictEqual(download.ok, true);
+      assert.strictEqual(download.data.path, outPath);
+      assert.strictEqual(download.data.bytes, Buffer.byteLength(content, 'utf8'));
+      assert.strictEqual(existsSync(outPath), true);
+      assert.strictEqual(readFileSync(outPath, 'utf8'), content);
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+      try {
+        runSpApi(['files', 'delete', '--path', serverPath]);
+      } catch {
+        // Best-effort cleanup; a failed delete should not hide download assertion results.
+      }
+    }
   });
 });

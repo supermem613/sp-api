@@ -48,6 +48,9 @@ function parseArgs(args) {
 function coerceValue(param, value) {
   if (value === undefined && Object.hasOwn(param, 'default')) return param.default;
   if (value === undefined) return undefined;
+  if (value === true && param.type !== 'boolean') {
+    throw new Error(`--${param.name} requires a value`);
+  }
   if (param.type === 'file-text') {
     return fs.readFileSync(String(value), 'utf8');
   }
@@ -171,13 +174,34 @@ function gitPullMadeNoChanges(output) {
   return /already up[- ]to[- ]date\.?/i.test(output);
 }
 
-function runCommand(command, args, cwd) {
-  return spawnSync(command, args, {
+function runCommand(command, args, cwd, deps = {}) {
+  const options = {
     cwd,
     encoding: 'utf8',
     stdio: ['ignore', 'pipe', 'pipe'],
-    shell: process.platform === 'win32',
-  });
+  };
+  const nodeExecutable = deps.nodeExecutable || process.execPath;
+  const resolveNpm = deps.resolveNpmCliPath || (() => resolveNpmCliPath(nodeExecutable));
+
+  if (process.platform === 'win32' && /^npm(?:\.cmd)?$/i.test(command)) {
+    const npmCli = resolveNpm();
+    if (npmCli) return spawnSync(nodeExecutable, [npmCli, ...args], options);
+  }
+  return spawnSync(command, args, options);
+}
+
+function resolveNpmCliPath(nodeExecutable = process.execPath) {
+  const nodeDir = path.dirname(nodeExecutable);
+  const candidates = [
+    path.join(nodeDir, 'node_modules', 'npm', 'bin', 'npm-cli.js'),
+    path.join(nodeDir, '..', 'node_modules', 'npm', 'bin', 'npm-cli.js')
+  ];
+  for (const candidate of candidates) {
+    try {
+      if (fs.statSync(candidate).isFile()) return candidate;
+    } catch {}
+  }
+  return null;
 }
 
 function isGitRepo(cwd) {
@@ -250,6 +274,24 @@ async function runAuth(verbName, flags) {
 
 function fail(stdout, code, command, message, details) {
   writeJson(stdout, envelope(false, command, null, { code, message, details }));
+}
+
+function writeDownloadToOut(values, execution) {
+  if (values.out === true) {
+    throw new Error('Missing value for --out');
+  }
+  const outValue = String(values.out);
+  if (!outValue.trim()) {
+    throw new Error('--out must be a non-empty path');
+  }
+  const outPath = path.resolve(outValue);
+  fs.mkdirSync(path.dirname(outPath), { recursive: true });
+  const bodyBuffer = execution.bodyBuffer || Buffer.from(typeof execution.data === 'string' ? execution.data : '', 'utf8');
+  fs.writeFileSync(outPath, bodyBuffer);
+  return {
+    path: outPath,
+    bytes: bodyBuffer.length,
+  };
 }
 
 async function main(args, io) {
@@ -358,7 +400,17 @@ async function main(args, io) {
     exit(1);
     return;
   }
-  writeJson(stdout, envelope(true, spec.id, execution.data, null, { endpoint: execution.endpoint, method: execution.method }));
+  let data = execution.data;
+  if (spec.id === 'files.download' && values.out) {
+    try {
+      data = writeDownloadToOut(values, execution);
+    } catch (err) {
+      fail(stdout, 'WRITE_FAILED', spec.id, `Could not write --out file: ${err.message}`);
+      exit(1);
+      return;
+    }
+  }
+  writeJson(stdout, envelope(true, spec.id, data, null, { endpoint: execution.endpoint, method: execution.method }));
   exit(0);
 }
 
@@ -375,4 +427,6 @@ module.exports = {
   buildSharePointRequest,
   runSharePoint,
   selfUpdate,
+  runCommand,
+  writeDownloadToOut,
 };
