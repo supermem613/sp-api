@@ -15,7 +15,7 @@ const {
   renderVerbHelp,
   renderSkillRouter,
 } = require('../src/renderers');
-const { buildSharePointRequest, collectParams, gitPullMadeNoChanges, selfUpdate, writeDownloadToOut } = require('../src/sp-api-core');
+const { buildSharePointRequest, collectParams, gitPullMadeNoChanges, runCommand, selfUpdate, writeDownloadToOut } = require('../src/sp-api-core');
 
 const repoRoot = join(__dirname, '..');
 const cliPath = join(repoRoot, 'bin', 'sp-api.js');
@@ -438,6 +438,43 @@ describe('update command', () => {
       'npm install --no-audit --no-fund',
       'npm run build',
     ]);
+  });
+
+  it('executes npm via node + npm-cli.js on Windows', () => {
+    const tmp = mkdtempSync(join(tmpdir(), 'sp-api-npm-cli-'));
+    const fakeNpmCli = join(tmp, 'npm-cli.js');
+    writeFileSync(
+      fakeNpmCli,
+      [
+        "'use strict';",
+        'process.stdout.write(JSON.stringify({',
+        '  argv0: process.argv[0],',
+        '  args: process.argv.slice(2),',
+        '}));',
+      ].join('\n'),
+      'utf8',
+    );
+
+    const originalNpmExecPath = process.env.npm_execpath;
+    const platformDescriptor = Object.getOwnPropertyDescriptor(process, 'platform');
+    process.env.npm_execpath = fakeNpmCli;
+
+    try {
+      Object.defineProperty(process, 'platform', { value: 'win32' });
+      const result = runCommand('npm', ['run', 'build'], repoRoot);
+      assert.strictEqual(result.status, 0);
+      const payload = JSON.parse(result.stdout);
+      assert.strictEqual(payload.argv0, process.execPath);
+      assert.deepStrictEqual(payload.args, ['run', 'build']);
+    } finally {
+      if (originalNpmExecPath === undefined) {
+        delete process.env.npm_execpath;
+      } else {
+        process.env.npm_execpath = originalNpmExecPath;
+      }
+      Object.defineProperty(process, 'platform', platformDescriptor);
+      rmSync(tmp, { recursive: true, force: true });
+    }
   });
 });
 

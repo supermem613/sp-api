@@ -172,31 +172,35 @@ function gitPullMadeNoChanges(output) {
 }
 
 function runCommand(command, args, cwd) {
-  // On Windows, resolve git/.cmd shims explicitly instead of using shell: true,
-  // which would subject args to cmd.exe quoting rules (latent command injection).
-  const resolved = process.platform === 'win32' && !/\.(exe|cmd|bat)$/i.test(command)
-    ? resolveWindowsCommand(command)
-    : command;
-  return spawnSync(resolved, args, {
+  const options = {
     cwd,
     encoding: 'utf8',
     stdio: ['ignore', 'pipe', 'pipe'],
-  });
+  };
+  // npm on Windows is often a .cmd shim, so run npm-cli.js directly via node.
+  if (process.platform === 'win32' && /^npm(?:\.cmd)?$/i.test(command)) {
+    const npmCli = resolveNpmCliPath();
+    if (npmCli) return spawnSync(process.execPath, [npmCli, ...args], options);
+  }
+  return spawnSync(command, args, options);
 }
 
-function resolveWindowsCommand(command) {
-  const pathExt = (process.env.PATHEXT || '.EXE;.CMD;.BAT;.COM').split(';');
-  const dirs = (process.env.PATH || '').split(path.delimiter);
-  for (const dir of dirs) {
-    if (!dir) continue;
-    for (const ext of pathExt) {
-      const candidate = path.join(dir, command + ext);
-      try {
-        if (fs.statSync(candidate).isFile()) return candidate;
-      } catch {}
-    }
+function resolveNpmCliPath() {
+  const candidates = [];
+  if (typeof process.env.npm_execpath === 'string' && process.env.npm_execpath) {
+    candidates.push(process.env.npm_execpath);
   }
-  return command;
+  const nodeDir = path.dirname(process.execPath);
+  candidates.push(
+    path.join(nodeDir, 'node_modules', 'npm', 'bin', 'npm-cli.js'),
+    path.join(nodeDir, '..', 'node_modules', 'npm', 'bin', 'npm-cli.js')
+  );
+  for (const candidate of candidates) {
+    try {
+      if (fs.statSync(candidate).isFile()) return candidate;
+    } catch {}
+  }
+  return null;
 }
 
 function isGitRepo(cwd) {
@@ -422,5 +426,6 @@ module.exports = {
   buildSharePointRequest,
   runSharePoint,
   selfUpdate,
+  runCommand,
   writeDownloadToOut,
 };
