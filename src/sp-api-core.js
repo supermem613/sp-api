@@ -272,7 +272,14 @@ function fail(stdout, code, command, message, details) {
 }
 
 function writeDownloadToOut(values, execution) {
-  const outPath = path.resolve(String(values.out));
+  if (values.out === true) {
+    throw new Error('Missing value for --out');
+  }
+  const outValue = String(values.out);
+  if (!outValue.trim()) {
+    throw new Error('--out must be a non-empty path');
+  }
+  const outPath = path.resolve(outValue);
   fs.mkdirSync(path.dirname(outPath), { recursive: true });
   const bodyBuffer = execution.bodyBuffer || Buffer.from(typeof execution.data === 'string' ? execution.data : '', 'utf8');
   fs.writeFileSync(outPath, bodyBuffer);

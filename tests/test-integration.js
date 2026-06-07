@@ -77,7 +77,7 @@ describe('sp-api live SharePoint integration', () => {
     const folder = libraries[0].RootFolder.ServerRelativeUrl;
     const suffix = Date.now();
     const name = `SP_API_INTEGRATION_DOWNLOAD_${suffix}.txt`;
-    const path = `${folder}/${name}`;
+    const serverPath = `${folder}/${name}`;
     const content = `integration-download-${suffix}`;
     const tmp = mkdtempSync(join(tmpdir(), 'sp-api-download-'));
     const outPath = join(tmp, 'downloaded.txt');
@@ -86,7 +86,7 @@ describe('sp-api live SharePoint integration', () => {
       const upload = runSpApi(['files', 'upload', '--folder', folder, '--name', name, '--content', content]);
       assert.strictEqual(upload.ok, true);
 
-      const download = runSpApi(['files', 'download', '--path', path, '--out', outPath]);
+      const download = runSpApi(['files', 'download', '--path', serverPath, '--out', outPath]);
       assert.strictEqual(download.ok, true);
       assert.strictEqual(download.data.path, outPath);
       assert.strictEqual(download.data.bytes, Buffer.byteLength(content, 'utf8'));
@@ -95,7 +95,7 @@ describe('sp-api live SharePoint integration', () => {
     } finally {
       rmSync(tmp, { recursive: true, force: true });
       try {
-        runSpApi(['files', 'delete', '--path', path]);
+        runSpApi(['files', 'delete', '--path', serverPath]);
       } catch {
         // Best-effort cleanup; a failed delete should not hide download assertion results.
       }
