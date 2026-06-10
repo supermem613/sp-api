@@ -101,4 +101,76 @@ describe('sp-api live SharePoint integration', () => {
       }
     }
   });
+
+  it('creates text, datetime, and choice list fields and is idempotent under --if-missing', () => {
+    const suffix = Date.now();
+    const listTitle = `SP_API_INTEGRATION_FIELDS_${suffix}`;
+
+    const create = runSpApi(['lists', 'create', '--title', listTitle]);
+    assert.strictEqual(create.ok, true, `lists create failed: ${JSON.stringify(create.error)}`);
+
+    try {
+      const owner = runSpApi(['lists', 'add-field', '--title', listTitle, '--name', 'Owner', '--type', 'text', '--if-missing', 'true']);
+      assert.strictEqual(owner.ok, true, `add-field Owner failed: ${JSON.stringify(owner.error)}`);
+      assert.notStrictEqual(owner.data?.skipped, true, 'first Owner creation should not be skipped');
+
+      const reviewDate = runSpApi([
+        'lists', 'add-field',
+        '--title', listTitle,
+        '--name', 'ReviewDate',
+        '--display-name', 'Review Date',
+        '--type', 'datetime',
+        '--format', 'date-only',
+        '--if-missing', 'true',
+      ]);
+      assert.strictEqual(reviewDate.ok, true, `add-field ReviewDate failed: ${JSON.stringify(reviewDate.error)}`);
+
+      const status = runSpApi([
+        'lists', 'add-field',
+        '--title', listTitle,
+        '--name', 'Status',
+        '--type', 'choice',
+        '--choices', 'Not Started,In Progress,Completed',
+        '--if-missing', 'true',
+      ]);
+      assert.strictEqual(status.ok, true, `add-field Status failed: ${JSON.stringify(status.error)}`);
+
+      const priority = runSpApi([
+        'lists', 'add-field',
+        '--title', listTitle,
+        '--name', 'Priority',
+        '--type', 'choice',
+        '--choices', 'High,Normal,Low',
+        '--required', 'true',
+        '--if-missing', 'true',
+      ]);
+      assert.strictEqual(priority.ok, true, `add-field Priority failed: ${JSON.stringify(priority.error)}`);
+
+      const fields = runSpApi(['lists', 'fields', '--title', listTitle]);
+      assert.strictEqual(fields.ok, true);
+      const internalNames = new Set((fields.data?.value || []).map(field => field.InternalName));
+      for (const expected of ['Owner', 'ReviewDate', 'Status', 'Priority']) {
+        assert.ok(internalNames.has(expected), `field ${expected} should exist on the list`);
+      }
+
+      const replay = runSpApi([
+        'lists', 'add-field',
+        '--title', listTitle,
+        '--name', 'Status',
+        '--type', 'choice',
+        '--choices', 'Not Started,In Progress,Completed',
+        '--if-missing', 'true',
+      ]);
+      assert.strictEqual(replay.ok, true);
+      assert.strictEqual(replay.data?.skipped, true, '--if-missing true should short-circuit when the field exists');
+      assert.strictEqual(replay.data?.reason, 'already-exists');
+      assert.strictEqual(replay.data?.name, 'Status');
+    } finally {
+      try {
+        runSpApi(['lists', 'delete', '--title', listTitle]);
+      } catch {
+        // Best-effort cleanup; a failed delete should not hide field assertion results.
+      }
+    }
+  });
 });

@@ -15,7 +15,8 @@ const {
   renderVerbHelp,
   renderSkillRouter,
 } = require('../src/renderers');
-const { buildSharePointRequest, collectParams, gitPullMadeNoChanges, runCommand, selfUpdate, writeDownloadToOut } = require('../src/sp-api-core');
+const { buildSharePointRequest, collectParams, gitPullMadeNoChanges, runCommand, selfUpdate, writeDownloadToOut, fieldExistsPreCheck } = require('../src/sp-api-core');
+const { buildCreateFieldSchemaXml, buildCreateFieldXmlBody, xmlEscape } = require('../src/list-fields');
 
 const repoRoot = join(__dirname, '..');
 const cliPath = join(repoRoot, 'bin', 'sp-api.js');
@@ -381,6 +382,310 @@ describe('SharePoint request construction', () => {
       process.chdir(originalCwd);
       rmSync(tmp, { recursive: true, force: true });
     }
+  });
+});
+
+describe('lists.add-field schema and validation', () => {
+  it('exposes add-field as a registered list verb', () => {
+    const verb = capabilities.lists.verbs['add-field'];
+    assert.ok(verb, 'lists.add-field must be registered');
+    assert.strictEqual(verb.id, 'lists.add-field');
+    assert.strictEqual(verb.method, 'POST');
+    assert.match(verb.path, /createfieldasxml$/);
+    assert.deepStrictEqual(verb.bodyBuilder, { kind: 'create-field-xml' });
+    assert.deepStrictEqual(verb.preCheck, {
+      kind: 'field-exists',
+      whenParam: 'if-missing',
+      nameParam: 'name',
+      listParam: 'title',
+    });
+    const typeParam = verb.params.find(p => p.name === 'type');
+    assert.deepStrictEqual(typeParam.enum, ['text', 'datetime', 'choice']);
+    const formatParam = verb.params.find(p => p.name === 'format');
+    assert.deepStrictEqual(formatParam.enum, ['date-only', 'date-time']);
+    assert.deepStrictEqual(verb.requiresWhen, [
+      { when: { param: 'type', value: 'choice' }, requires: ['choices'] },
+    ]);
+  });
+
+  it('emits a focused schema for lists.add-field with declarative hooks', () => {
+    const r = spawnSync(process.execPath, [cliPath, 'schema', 'lists', 'add-field'], {
+      cwd: repoRoot,
+      encoding: 'utf8',
+    });
+    const json = JSON.parse(r.stdout);
+    assert.strictEqual(json.ok, true);
+    assert.strictEqual(json.data.id, 'lists.add-field');
+    assert.deepStrictEqual(json.data.bodyBuilder, { kind: 'create-field-xml' });
+    assert.deepStrictEqual(json.data.preCheck, {
+      kind: 'field-exists',
+      whenParam: 'if-missing',
+      nameParam: 'name',
+      listParam: 'title',
+    });
+  });
+
+  it('renders generated help for lists.add-field including options and examples', () => {
+    const r = spawnSync(process.execPath, [cliPath, 'lists', 'add-field', '--help'], {
+      cwd: repoRoot,
+      encoding: 'utf8',
+    });
+    assert.strictEqual(r.status, 0);
+    assert.match(r.stdout, /--name/);
+    assert.match(r.stdout, /--type/);
+    assert.match(r.stdout, /--choices/);
+    assert.match(r.stdout, /--if-missing/);
+    assert.match(r.stdout, /createfieldasxml/);
+    assert.match(r.stdout, /sp-api lists add-field --title Tasks --name Status --type choice --choices/);
+  });
+
+  it('rejects unknown --type values via enum validation', () => {
+    assert.throws(
+      () => collectParams(capabilities.lists.verbs['add-field'], {
+        title: 'Tasks',
+        name: 'Foo',
+        type: 'lookup',
+      }),
+      /--type must be one of: text, datetime, choice/,
+    );
+  });
+
+  it('requires --choices when --type is choice', () => {
+    assert.throws(
+      () => collectParams(capabilities.lists.verbs['add-field'], {
+        title: 'Tasks',
+        name: 'Status',
+        type: 'choice',
+      }),
+      /Missing required option --choices when --type is choice/,
+    );
+  });
+
+  it('accepts a valid datetime field with default format and required flag', () => {
+    const values = collectParams(capabilities.lists.verbs['add-field'], {
+      title: 'Tasks',
+      name: 'ReviewDate',
+      'display-name': 'Review Date',
+      type: 'datetime',
+    });
+    assert.strictEqual(values.format, 'date-only');
+    assert.strictEqual(values.required, false);
+    assert.strictEqual(values['add-to-default-view'], true);
+    assert.strictEqual(values['if-missing'], false);
+  });
+
+  it('surfaces JSON validation envelopes through the CLI for bad --type', () => {
+    const r = spawnSync(process.execPath, [
+      cliPath, 'lists', 'add-field',
+      '--title', 'Tasks',
+      '--name', 'Foo',
+      '--type', 'lookup',
+    ], {
+      cwd: repoRoot,
+      encoding: 'utf8',
+    });
+    assert.strictEqual(r.status, 2);
+    assert.strictEqual(r.stderr, '');
+    const json = JSON.parse(r.stdout);
+    assert.strictEqual(json.ok, false);
+    assert.strictEqual(json.command, 'lists.add-field');
+    assert.strictEqual(json.error.code, 'VALIDATION_FAILED');
+    assert.match(json.error.message, /--type must be one of/);
+  });
+
+  it('surfaces JSON validation envelopes through the CLI for missing --choices', () => {
+    const r = spawnSync(process.execPath, [
+      cliPath, 'lists', 'add-field',
+      '--title', 'Tasks',
+      '--name', 'Status',
+      '--type', 'choice',
+    ], {
+      cwd: repoRoot,
+      encoding: 'utf8',
+    });
+    assert.strictEqual(r.status, 2);
+    const json = JSON.parse(r.stdout);
+    assert.strictEqual(json.ok, false);
+    assert.strictEqual(json.error.code, 'VALIDATION_FAILED');
+    assert.match(json.error.message, /--choices when --type is choice/);
+  });
+});
+
+describe('lists.add-field body construction', () => {
+  it('xml-escapes special characters in attribute values and choice bodies', () => {
+    assert.strictEqual(xmlEscape('Tom & "Jerry" <fast>'), 'Tom &amp; &quot;Jerry&quot; &lt;fast&gt;');
+    assert.strictEqual(xmlEscape("O'Brien"), 'O&apos;Brien');
+  });
+
+  it('builds a text field schema with display name fallback to internal name', () => {
+    const xml = buildCreateFieldSchemaXml({ type: 'text', name: 'Owner' });
+    assert.strictEqual(xml, '<Field Name="Owner" DisplayName="Owner" Type="Text" />');
+  });
+
+  it('builds a date-only datetime field schema by default', () => {
+    const xml = buildCreateFieldSchemaXml({
+      type: 'datetime',
+      name: 'ReviewDate',
+      'display-name': 'Review Date',
+      format: 'date-only',
+    });
+    assert.strictEqual(xml, '<Field Name="ReviewDate" DisplayName="Review Date" Type="DateTime" Format="DateOnly" />');
+  });
+
+  it('builds a date-time datetime field schema when --format date-time is set', () => {
+    const xml = buildCreateFieldSchemaXml({
+      type: 'datetime',
+      name: 'DueAt',
+      format: 'date-time',
+    });
+    assert.match(xml, /Format="DateTime"/);
+  });
+
+  it('builds a choice field schema with CHOICES children from CSV', () => {
+    const xml = buildCreateFieldSchemaXml({
+      type: 'choice',
+      name: 'Status',
+      'display-name': 'Status',
+      choices: 'Not Started, In Progress ,Completed',
+    });
+    assert.strictEqual(
+      xml,
+      '<Field Name="Status" DisplayName="Status" Type="Choice"><CHOICES><CHOICE>Not Started</CHOICE><CHOICE>In Progress</CHOICE><CHOICE>Completed</CHOICE></CHOICES></Field>',
+    );
+  });
+
+  it('marks the field Required when --required is true', () => {
+    const xml = buildCreateFieldSchemaXml({ type: 'text', name: 'Owner', required: true });
+    assert.match(xml, /Required="TRUE"/);
+  });
+
+  it('throws when --type is choice but choices is empty after trimming', () => {
+    assert.throws(
+      () => buildCreateFieldSchemaXml({ type: 'choice', name: 'Status', choices: ' , , ' }),
+      /at least one non-empty value/,
+    );
+  });
+
+  it('wraps the schema xml in an SP.XmlSchemaFieldCreationInformation envelope with Options=8 by default', () => {
+    const body = JSON.parse(buildCreateFieldXmlBody({
+      type: 'text',
+      name: 'Owner',
+    }));
+    assert.deepStrictEqual(body.parameters.__metadata, { type: 'SP.XmlSchemaFieldCreationInformation' });
+    assert.strictEqual(body.parameters.Options, 8);
+    assert.match(body.parameters.SchemaXml, /<Field Name="Owner"/);
+  });
+
+  it('sets Options=0 when --add-to-default-view is explicitly false', () => {
+    const body = JSON.parse(buildCreateFieldXmlBody({
+      type: 'text',
+      name: 'Owner',
+      'add-to-default-view': false,
+    }));
+    assert.strictEqual(body.parameters.Options, 0);
+  });
+
+  it('routes lists.add-field through buildSharePointRequest with the createfieldasxml endpoint and SchemaXml body', () => {
+    const values = collectParams(capabilities.lists.verbs['add-field'], {
+      title: 'Tasks',
+      name: 'Status',
+      'display-name': 'Status',
+      type: 'choice',
+      choices: 'Not Started,In Progress,Completed',
+      'if-missing': true,
+    });
+    const request = buildSharePointRequest(capabilities.lists.verbs['add-field'], values);
+    assert.strictEqual(request.endpoint, "_api/web/lists/getbytitle('Tasks')/fields/createfieldasxml");
+    const body = JSON.parse(request.body);
+    assert.strictEqual(body.parameters.Options, 8);
+    assert.match(body.parameters.SchemaXml, /<Field Name="Status" DisplayName="Status" Type="Choice">/);
+    assert.match(body.parameters.SchemaXml, /<CHOICE>Not Started<\/CHOICE>/);
+    assert.match(body.parameters.SchemaXml, /<CHOICE>In Progress<\/CHOICE>/);
+    assert.match(body.parameters.SchemaXml, /<CHOICE>Completed<\/CHOICE>/);
+  });
+});
+
+describe('lists.add-field idempotent pre-check', () => {
+  function stubAuth() {
+    return { SP_SITE: 'https://contoso.sharepoint.com/sites/team', SP_TOKEN: 'token' };
+  }
+
+  it('skips creation and returns a skipped envelope when the field already exists', async () => {
+    const calls = [];
+    const result = await fieldExistsPreCheck(
+      { kind: 'field-exists', whenParam: 'if-missing', nameParam: 'name', listParam: 'title' },
+      { title: 'Tasks', name: 'Status', 'if-missing': true },
+      {
+        auth: stubAuth(),
+        fetch: async (url) => {
+          calls.push(url);
+          return { ok: true, status: 200, text: async () => JSON.stringify({ InternalName: 'Status', Title: 'Status', TypeAsString: 'Choice' }) };
+        },
+      },
+    );
+    assert.ok(result, 'pre-check must short-circuit with a result');
+    assert.strictEqual(result.method, 'GET');
+    assert.strictEqual(result.data.skipped, true);
+    assert.strictEqual(result.data.reason, 'already-exists');
+    assert.strictEqual(result.data.name, 'Status');
+    assert.deepStrictEqual(result.data.field, { InternalName: 'Status', Title: 'Status', TypeAsString: 'Choice' });
+    assert.ok(calls[0].includes("/fields/getbyinternalnameortitle('Status')"), 'must query field by internal name');
+  });
+
+  it('returns null so creation proceeds when the field does not exist (404)', async () => {
+    const result = await fieldExistsPreCheck(
+      { kind: 'field-exists', whenParam: 'if-missing', nameParam: 'name', listParam: 'title' },
+      { title: 'Tasks', name: 'Owner', 'if-missing': true },
+      {
+        auth: stubAuth(),
+        fetch: async () => ({ ok: false, status: 404, text: async () => '{"error":{"message":"not found"}}' }),
+      },
+    );
+    assert.strictEqual(result, null);
+  });
+
+  it('returns null when SharePoint reports a missing field as HTTP 400 with "Column ... does not exist"', async () => {
+    const result = await fieldExistsPreCheck(
+      { kind: 'field-exists', whenParam: 'if-missing', nameParam: 'name', listParam: 'title' },
+      { title: 'Tasks', name: 'Owner', 'if-missing': true },
+      {
+        auth: stubAuth(),
+        fetch: async () => ({
+          ok: false,
+          status: 400,
+          text: async () => '{"odata.error":{"code":"-2147024809, System.ArgumentException","message":{"lang":"en-US","value":"Column \'Owner\' does not exist. It may have been deleted by another user."}}}',
+        }),
+      },
+    );
+    assert.strictEqual(result, null);
+  });
+
+  it('returns null without making any HTTP calls when --if-missing is false', async () => {
+    let calls = 0;
+    const result = await fieldExistsPreCheck(
+      { kind: 'field-exists', whenParam: 'if-missing', nameParam: 'name', listParam: 'title' },
+      { title: 'Tasks', name: 'Owner', 'if-missing': false },
+      {
+        auth: stubAuth(),
+        fetch: async () => { calls++; return { ok: true, status: 200, text: async () => '{}' }; },
+      },
+    );
+    assert.strictEqual(result, null);
+    assert.strictEqual(calls, 0);
+  });
+
+  it('propagates non-404 errors so the caller can surface them', async () => {
+    await assert.rejects(
+      () => fieldExistsPreCheck(
+        { kind: 'field-exists', whenParam: 'if-missing', nameParam: 'name', listParam: 'title' },
+        { title: 'Tasks', name: 'Owner', 'if-missing': true },
+        {
+          auth: stubAuth(),
+          fetch: async () => ({ ok: false, status: 401, text: async () => 'unauthorized' }),
+        },
+      ),
+      /HTTP 401/,
+    );
   });
 });
 

@@ -7,8 +7,17 @@ const { capabilities } = require('./registry');
 const { emitSchema, renderRootHelp, renderCapabilityHelp, renderVerbHelp } = require('./renderers');
 const { AUTH_FILE, authenticate, authStatus, logout } = require('./sharepoint-auth');
 const { executeSharePointRequest } = require('./sharepoint-rest');
+const { buildCreateFieldXmlBody } = require('./list-fields');
 
 const repoRoot = path.join(__dirname, '..');
+
+const BODY_BUILDERS = {
+  'create-field-xml': buildCreateFieldXmlBody,
+};
+
+const PRE_CHECKS = {
+  'field-exists': fieldExistsPreCheck,
+};
 
 function envelope(ok, command, data, error, meta = {}) {
   return {
@@ -82,6 +91,9 @@ function collectParams(spec, flags) {
     if (value === undefined && param.required) {
       throw new Error(`Missing required option --${param.name}`);
     }
+    if (value !== undefined && param.enum && !param.enum.includes(value)) {
+      throw new Error(`--${param.name} must be one of: ${param.enum.join(', ')}`);
+    }
     if (value !== undefined) values[param.mapsTo || param.name] = value;
   }
   for (const group of spec.requiresOneOf || []) {
@@ -89,7 +101,25 @@ function collectParams(spec, flags) {
       throw new Error(`Missing one of required options: ${group.map(name => `--${name}`).join(' or ')}`);
     }
   }
+  for (const rule of spec.requiresWhen || []) {
+    if (!ruleTriggerMatches(rule.when, flags)) continue;
+    for (const requiredName of rule.requires) {
+      if (flags[requiredName] === undefined) {
+        const trigger = rule.when.value === undefined
+          ? `--${rule.when.param} is set`
+          : `--${rule.when.param} is ${rule.when.value}`;
+        throw new Error(`Missing required option --${requiredName} when ${trigger}`);
+      }
+    }
+  }
   return values;
+}
+
+function ruleTriggerMatches(when, flags) {
+  const raw = flags[when.param];
+  if (when.value === undefined) return raw !== undefined;
+  if (raw === when.value) return true;
+  return String(raw) === String(when.value);
 }
 
 function replacePlaceholders(template, values) {
@@ -117,6 +147,11 @@ function addQuery(endpoint, query, values) {
 }
 
 function buildBody(spec, values) {
+  if (spec.bodyBuilder) {
+    const builder = BODY_BUILDERS[spec.bodyBuilder.kind];
+    if (!builder) throw new Error(`Unknown bodyBuilder kind: ${spec.bodyBuilder.kind}`);
+    return builder(values);
+  }
   if (Object.hasOwn(values, 'body')) return JSON.stringify(values.body);
   if (spec.bodyParam) return String(values[spec.bodyParam] || '');
   if (!spec.bodyTemplate) return '';
@@ -138,6 +173,13 @@ function buildBody(spec, values) {
 }
 
 async function runSharePoint(spec, values) {
+  if (spec.preCheck) {
+    const preChecker = PRE_CHECKS[spec.preCheck.kind];
+    if (preChecker) {
+      const skip = await preChecker(spec.preCheck, values);
+      if (skip) return skip;
+    }
+  }
   const { endpoint, body } = buildSharePointRequest(spec, values);
   try {
     return await executeSharePointRequest(spec, endpoint, body);
@@ -151,6 +193,39 @@ async function runSharePoint(spec, values) {
     }
     throw err;
   }
+}
+
+async function fieldExistsPreCheck(preCheck, values, deps = {}) {
+  if (!values[preCheck.whenParam]) return null;
+  const listTitle = values[preCheck.listParam];
+  const internalName = values[preCheck.nameParam];
+  const endpoint =
+    `_api/web/lists/getbytitle('${encodeSharePointValue(listTitle)}')` +
+    `/fields/getbyinternalnameortitle('${encodeSharePointValue(internalName)}')` +
+    `?$select=InternalName,Title,TypeAsString`;
+  try {
+    const existing = await executeSharePointRequest({ method: 'GET' }, endpoint, '', deps);
+    return {
+      data: {
+        skipped: true,
+        reason: 'already-exists',
+        name: internalName,
+        field: existing.data,
+      },
+      endpoint,
+      method: 'GET',
+    };
+  } catch (err) {
+    if (isFieldMissingError(err)) return null;
+    throw err;
+  }
+}
+
+function isFieldMissingError(err) {
+  const message = err?.message || '';
+  if (/HTTP 404\b/.test(message)) return true;
+  if (/HTTP 400\b/.test(message) && /Column\b[^\n]*\bdoes not exist/i.test(message)) return true;
+  return false;
 }
 
 function buildSharePointRequest(spec, values) {
@@ -429,4 +504,5 @@ module.exports = {
   selfUpdate,
   runCommand,
   writeDownloadToOut,
+  fieldExistsPreCheck,
 };

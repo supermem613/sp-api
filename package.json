@@ -1,6 +1,6 @@
 {
   "name": "sp-api",
-  "version": "1.4.0",
+  "version": "1.5.0",
   "description": "Agentic SharePoint CLI with a bundled thin skill for coding agents",
   "bin": {
     "sp-api": "bin/sp-api.js"

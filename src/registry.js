@@ -54,7 +54,7 @@ const capabilities = {
   lists: {
     id: 'lists',
     summary: 'Work with SharePoint lists and list items',
-    description: 'List discovery, list metadata, list creation/deletion, and item CRUD.',
+    description: 'List discovery, list metadata, list creation/deletion, list field creation, and item CRUD.',
     verbs: {
       list: {
         id: 'lists.list',
@@ -123,6 +123,38 @@ const capabilities = {
         ],
         output: { envelope: envelopeSchema, data: 'Delete status' },
         examples: ['sp-api lists delete --title "Old Tracker"'],
+      },
+      'add-field': {
+        id: 'lists.add-field',
+        summary: 'Add a text, datetime, or choice field to a SharePoint list',
+        method: 'POST',
+        path: "_api/web/lists/getbytitle('{title}')/fields/createfieldasxml",
+        auth: 'required',
+        handler: 'sharepoint-rest',
+        requiresDigest: true,
+        params: [
+          { name: 'title', type: 'string', required: true, doc: 'List title' },
+          { name: 'name', type: 'string', required: true, doc: 'Internal field name. Becomes the StaticName and InternalName SharePoint returns in field metadata and item bodies' },
+          { name: 'display-name', type: 'string', required: false, doc: 'Display name shown in the SharePoint UI. Defaults to --name when omitted' },
+          { name: 'type', type: 'string', required: true, enum: ['text', 'datetime', 'choice'], doc: 'Field type. One of text, datetime, or choice' },
+          { name: 'choices', type: 'string', required: false, doc: 'Comma-separated choice values. Required when --type is choice. Choice values themselves must not contain commas' },
+          { name: 'format', type: 'string', required: false, enum: ['date-only', 'date-time'], default: 'date-only', doc: 'DateTime display format. Only applies when --type is datetime' },
+          { name: 'required', type: 'boolean', required: false, default: false, doc: 'Whether the field is required on the list' },
+          { name: 'add-to-default-view', type: 'boolean', required: false, default: true, doc: 'Whether to add the new field to the list default view' },
+          { name: 'if-missing', type: 'boolean', required: false, default: false, doc: 'Skip creation when a field with the same internal name already exists. The success envelope reports skipped: true in that case' },
+        ],
+        bodyBuilder: { kind: 'create-field-xml' },
+        preCheck: { kind: 'field-exists', whenParam: 'if-missing', nameParam: 'name', listParam: 'title' },
+        requiresWhen: [
+          { when: { param: 'type', value: 'choice' }, requires: ['choices'] },
+        ],
+        output: { envelope: envelopeSchema, data: 'Created field metadata, or { skipped: true } when --if-missing matches an existing field' },
+        examples: [
+          'sp-api lists add-field --title Tasks --name Owner --type text --if-missing true',
+          'sp-api lists add-field --title Tasks --name ReviewDate --display-name "Review Date" --type datetime --format date-only --if-missing true',
+          'sp-api lists add-field --title Tasks --name Status --type choice --choices "Not Started,In Progress,Completed" --if-missing true',
+          'sp-api lists add-field --title Tasks --name Priority --type choice --choices "High,Normal,Low" --required true --if-missing true',
+        ],
       },
       items: {
         id: 'lists.items',

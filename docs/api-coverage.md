@@ -9,7 +9,7 @@
 | Group | Verbs | Notes |
 |-------|-------|-------|
 | `auth` | `login`, `logout`, `status` | Playwright Edge persistent-context auth |
-| `lists` | `list`, `get`, `fields`, `create`, `delete`, `items`, `add-item`, `update-item`, `delete-item` | List discovery, field schema, and core item CRUD |
+| `lists` | `list`, `get`, `fields`, `create`, `delete`, `add-field`, `items`, `add-item`, `update-item`, `delete-item` | List discovery, field schema, list-field creation with idempotent `--if-missing`, and core item CRUD |
 | `files` | `list`, `get`, `folder`, `download`, `upload`, `delete`, `recycle`, `move`, `copy`, `create-folder`, `delete-folder`, `recycle-folder` | Folder/file operations for small text uploads, folder expansion, recycle, folder CRUD, and common file movement |
 | `search` | `query` | Site-scoped SharePoint search with explicit query text and result shaping |
 | `sites` | `get`, `discovery` | Site metadata and visible list/library discovery |
