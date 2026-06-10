@@ -39,6 +39,7 @@ This repo is first and foremost the `sp-api` CLI. It includes a bundled skill on
 - *"Show me all visible lists on this site with their item counts"*
 - *"Get metadata for the Tasks list"*
 - *"Show me the field schema for the Projects list, including internal names, types, required flags, read-only flags, and choices"*
+- *"Add a text, datetime, or choice field to a list, idempotently with `--if-missing`, so a fixture list can be set up safely on every run"*
 - *"Get the first 25 items from the Tasks list with only Title, Id, and Status"*
 - *"Create a new list called Project Tracker"*
 - *"Create a new item in the Issues list with Title 'Server outage' and Priority 'High'"*
@@ -93,7 +94,7 @@ This repo is first and foremost the `sp-api` CLI. It includes a bundled skill on
 
 ```text
 sp-api auth   login | logout | status
-sp-api lists  list | get | fields | create | delete | items | add-item | update-item | delete-item
+sp-api lists  list | get | fields | create | delete | add-field | items | add-item | update-item | delete-item
 sp-api files  list | get | download | upload | create-folder | delete-folder | recycle-folder | delete | move | copy | folder | recycle
 sp-api search query
 sp-api sites  get | discovery
